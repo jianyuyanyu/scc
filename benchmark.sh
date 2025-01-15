@@ -3,10 +3,11 @@
 # Assumes we need to install everything from scratch on a box for benchmarking
 # Also assumes we have copied the ./examples/performance_tests/create_performance_test.py file to where this is run
 
-apt-get update
-apt-get install --assume-yes build-essential unzip tmux python htop
+apt update
+apt install --assume-yes build-essential unzip tmux htop
 
 rm *.zip
+rm *.gz
 wget https://github.com/boyter/scc/releases/download/v1.0.0/scc-1.0.0-x86_64-unknown-linux.zip
 unzip scc-1.0.0-x86_64-unknown-linux.zip
 mv scc /usr/local/bin/scc1.0.0
@@ -111,36 +112,78 @@ mv scc /usr/local/bin/scc2.9.1
 
 wget https://github.com/boyter/scc/releases/download/v2.10.0/scc-2.10.0-x86_64-unknown-linux.zip
 unzip scc-2.10.0-x86_64-unknown-linux.zip
-cp scc /usr/local/bin/scc2.10.0
+mv scc /usr/local/bin/scc2.10.0
 
-wget https://github.com/boyter/scc/releases/download/v2.10.0/scc-2.11.0-x86_64-unknown-linux.zip
+wget https://github.com/boyter/scc/releases/download/v2.11.0/scc-2.11.0-x86_64-unknown-linux.zip
 unzip scc-2.11.0-x86_64-unknown-linux.zip
-cp scc /usr/local/bin/scc2.11.0
+mv scc /usr/local/bin/scc2.11.0
 
-wget https://github.com/boyter/scc/releases/download/v2.10.0/scc-2.12.0-x86_64-unknown-linux.zip
+wget https://github.com/boyter/scc/releases/download/v2.12.0/scc-2.12.0-x86_64-unknown-linux.zip
 unzip scc-2.12.0-x86_64-unknown-linux.zip
-cp scc /usr/local/bin/scc2.12.0
+mv scc /usr/local/bin/scc2.12.0
 
-wget https://github.com/boyter/scc/releases/download/v2.10.0/scc-2.13.0-x86_64-unknown-linux.zip
+wget https://github.com/boyter/scc/releases/download/v2.13.0/scc-2.13.0-x86_64-unknown-linux.zip
 unzip scc-2.13.0-x86_64-unknown-linux.zip
-cp scc /usr/local/bin/scc2.13.0
+mv scc /usr/local/bin/scc2.13.0
 
 wget https://github.com/boyter/scc/releases/download/v3.0.0/scc-3.0.0-x86_64-unknown-linux.zip
 unzip scc-3.0.0-x86_64-unknown-linux.zip
-cp scc /usr/local/bin/scc3.0.0
+mv scc /usr/local/bin/scc3.0.0
 
 wget https://github.com/boyter/scc/releases/download/v3.1.0/scc_3.1.0_Linux_x86_64.tar.gz
-unzip scc_3.1.0_Linux_x86_64.tar.gz
-cp scc /usr/local/bin/scc3.1.0
+tar zxvf scc_3.1.0_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.1.0
 
-# Now setup the most recent as the default
+wget https://github.com/boyter/scc/releases/download/v3.2.0/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.2.0
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.3.0/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.3.0
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.3.2/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.3.2
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.3.3/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.3.3
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.3.4/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.3.4
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.3.4/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+mv scc /usr/local/bin/scc3.3.4
+rm scc_Linux_x86_64.tar.gz
+
+wget https://github.com/boyter/scc/releases/download/v3.4.0/scc_Linux_x86_64.tar.gz
+tar zxvf scc_Linux_x86_64.tar.gz
+cp scc /usr/local/bin/scc3.4.0
 mv scc /usr/local/bin/scc
+rm scc_Linux_x86_64.tar.gz
 
-echo "Setting up rust toolchain"
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source $HOME/.cargo/env
 
-cargo install hyperfine tokei loc
+# Now setup comparison applications starting with hyperfine which we compare against
+
+wget https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine-v1.18.0-x86_64-unknown-linux-musl.tar.gz
+tar zxvf hyperfine-v1.18.0-x86_64-unknown-linux-musl.tar.gz
+mv hyperfine-v1.18.0-x86_64-unknown-linux-musl/hyperfine /usr/local/bin/hyperfine
+chmod +x /usr/local/bin/hyperfine
+
+# Now the comparison applications
+
+wget https://github.com/XAMPPRocky/tokei/releases/download/v12.1.2/tokei-x86_64-unknown-linux-musl.tar.gz
+tar zxvf tokei-x86_64-unknown-linux-musl.tar.gz
+chmod +x ./tokei
+mv ./tokei /usr/local/bin/
 
 wget https://github.com/vmchale/polyglot/releases/download/0.5.29/poly-x86_64-unknown-linux-gcc-9
 mv poly-x86_64-unknown-linux-gcc-9 /usr/local/bin/polyglot
@@ -148,56 +191,35 @@ chmod +x /usr/local/bin/polyglot
 
 # Now setup all of the benchmarks
 
-rm -rf artificial
-mkdir artificial
-cp create_performance_test.py artificial
-cd artificial
-python create_performance_test.py
-cd ..
-rm artificial/create_performance_test.py
-
 # Clone the stuff we want to test
-rm -rf redis
+rm -rf valkey
 rm -rf cpython
 rm -rf linux
+rm -rf sourcegraph
 
-git clone --depth=1 https://github.com/antirez/redis.git
+git clone --depth=1 https://github.com/valkey-io/valkey.git
 git clone --depth=1 https://github.com/python/cpython.git
 git clone --depth=1 https://github.com/torvalds/linux.git
-
-# Setup torture test
-#
-#echo "Copying 10 linuxes"
-#mkdir -p linux10
-#cp -R linux linux10/0
-#cp -R linux linux10/1
-#cp -R linux linux10/2
-#cp -R linux linux10/3
-#cp -R linux linux10/4
-#cp -R linux linux10/5
-#cp -R linux linux10/6
-#cp -R linux linux10/7
-#cp -R linux linux10/8
-#cp -R linux linux10/9
+git clone --depth=1 https://github.com/SINTEF/sourcegraph.git
 
 # Regression test all versions of scc
+echo "Sanity check it all works"
+hyperfine 'scc1.0.0 valkey' 'scc1.1.0 valkey' 'scc1.2.0 valkey' 'scc1.3.0 valkey' 'scc1.4.0 valkey' 'scc1.5.0 valkey' 'scc1.6.0 valkey' 'scc1.7.0 valkey' 'scc1.8.0 valkey' 'scc1.9.0 valkey' 'scc1.10.0 valkey' 'scc1.11.0 valkey' 'scc1.12.0 valkey' 'scc1.12.1 valkey' 'scc2.0.0 valkey' 'scc2.1.0 valkey' 'scc2.2.0 valkey' 'scc2.3.0 valkey' 'scc2.4.0 valkey' 'scc2.5.0 valkey' 'scc2.6.0 valkey' 'scc2.7.0 valkey' 'scc2.8.0 valkey' 'scc2.9.0 valkey' 'scc2.9.1 valkey' 'scc2.10.0 valkey' 'scc2.11.0 valkey' 'scc2.12.0 valkey' 'scc2.13.0 valkey' 'scc3.0.0 valkey' 'scc3.1.0 valkey' 'scc3.2.0 valkey' 'scc3.3.0 valkey' 'scc3.3.2 valkey' 'scc3.3.3 valkey' 'scc3.3.4 valkey' 'scc3.4.0 valkey'
+
 echo "Running regression benchmark"
-hyperfine 'scc1.0.0 linux' 'scc1.1.0 linux' 'scc1.2.0 linux' 'scc1.3.0 linux' 'scc1.4.0 linux' 'scc1.5.0 linux' 'scc1.6.0 linux' 'scc1.7.0 linux' 'scc1.8.0 linux' 'scc1.9.0 linux' 'scc1.10.0 linux' 'scc1.11.0 linux' 'scc1.12.0 linux' 'scc1.12.1 linux' 'scc2.0.0 linux' 'scc2.1.0 linux' 'scc2.2.0 linux' 'scc2.3.0 linux' 'scc2.4.0 linux' 'scc2.5.0 linux' 'scc2.6.0 linux' 'scc2.7.0 linux' 'scc2.8.0 linux' 'scc2.9.0 linux' 'scc2.9.1 linux' 'scc2.10.0 linux' 'scc2.11.0 linux' 'scc2.12.0 linux' 'scc2.13.0 linux' 'scc3.0.0 linux' 'scc3.1.0 linux' > benchmark_regression.txt
+hyperfine 'scc1.0.0 linux' 'scc1.1.0 linux' 'scc1.2.0 linux' 'scc1.3.0 linux' 'scc1.4.0 linux' 'scc1.5.0 linux' 'scc1.6.0 linux' 'scc1.7.0 linux' 'scc1.8.0 linux' 'scc1.9.0 linux' 'scc1.10.0 linux' 'scc1.11.0 linux' 'scc1.12.0 linux' 'scc1.12.1 linux' 'scc2.0.0 linux' 'scc2.1.0 linux' 'scc2.2.0 linux' 'scc2.3.0 linux' 'scc2.4.0 linux' 'scc2.5.0 linux' 'scc2.6.0 linux' 'scc2.7.0 linux' 'scc2.8.0 linux' 'scc2.9.0 linux' 'scc2.9.1 linux' 'scc2.10.0 linux' 'scc2.11.0 linux' 'scc2.12.0 linux' 'scc2.13.0 linux' 'scc3.0.0 linux' 'scc3.1.0 linux' 'scc3.2.0 linux' 'scc3.3.0 linux' 'scc3.3.2 linux' 'scc3.3.3 linux' 'scc3.3.4 linux' 'scc3.4.0 linux' > benchmark_regression.txt
 
 # Benchmark against everything
-echo "Running artificial benchmark"
-hyperfine 'scc artificial' 'scc -c artificial' 'tokei artificial' 'loc artificial' 'polyglot artificial' > benchmark_artificial.txt
-
-echo "Running redis benchmark"
-hyperfine 'scc redis' 'scc -c redis' 'tokei redis' 'loc redis' 'polyglot redis' > benchmark_redis.txt
+echo "Running valkey benchmark"
+hyperfine 'scc valkey' 'scc -c valkey' 'tokei valkey' 'polyglot valkey' > benchmark_valkey.txt
 
 echo "Running cpython benchmark"
-hyperfine 'scc cpython' 'scc -c cpython' 'tokei cpython' 'loc cpython' 'polyglot cpython' > benchmark_cpython.txt
+hyperfine 'scc cpython' 'scc -c cpython' 'tokei cpython' 'polyglot cpython' > benchmark_cpython.txt
+
+echo "Running sourcegraph benchmark"
+hyperfine 'scc sourcegraph' 'scc -c sourcegraph' 'tokei sourcegraph' 'polyglot sourcegraph' > benchmark_sourcegraph.txt
 
 echo "Running linux benchmark"
-hyperfine 'scc linux' 'scc -c linux' 'tokei linux' 'loc linux' 'polyglot linux' > benchmark_linux.txt
-
-#echo "Running linux10 benchmark"
-#hyperfine 'scc linux10' 'scc -c linux10' 'tokei linux10' 'loc linux10' 'polyglot linux10' > benchmark_linux10.txt
+hyperfine 'scc linux' 'scc -c linux' 'tokei linux' 'polyglot linux' > benchmark_linux.txt
 
 echo "All done!"

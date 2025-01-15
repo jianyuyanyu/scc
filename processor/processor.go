@@ -1,24 +1,29 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package processor
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/boyter/gocodewalker"
 
 	jsoniter "github.com/json-iterator/go"
 )
 
 // Version indicates the version of the application
-var Version = "3.3.0 (beta)"
+var Version = "3.5.0 (beta)"
 
 // Flags set via the CLI which control how the output is displayed
 
@@ -73,7 +78,7 @@ var More = false
 // Cocomo toggles the COCOMO calculation
 var Cocomo = false
 
-// Print a more SLOCCount like COCOMO calculation
+// SLOCCountFormat prints a more SLOCCount like COCOMO calculation
 var SLOCCountFormat = false
 
 // CocomoProjectType allows the flipping between project types which impacts the calculation
@@ -81,6 +86,9 @@ var CocomoProjectType = "organic"
 
 // Size toggles the Size calculation
 var Size = false
+
+// Draw horizontal borders between sections.
+var HBorder = false
 
 // SizeUnit determines what size calculation is used for megabytes
 var SizeUnit = "si"
@@ -91,11 +99,32 @@ var Ci = false
 // GitIgnore disables .gitignore checks
 var GitIgnore = false
 
+// GitModuleIgnore disables .gitmodules checks
+var GitModuleIgnore = false
+
 // Ignore disables ignore file checks
 var Ignore = false
 
+// SccIgnore disables sccignore file checks
+var SccIgnore = false
+
+// CountIgnore should we count ignore files?
+var CountIgnore = false
+
 // DisableCheckBinary toggles checking for binary files using NUL bytes
 var DisableCheckBinary = false
+
+// UlocMode toggles checking for binary files using NUL bytes
+var UlocMode = false
+
+// Percent toggles checking for binary files using NUL bytes
+var Percent = false
+
+// MaxMean toggles checking for binary files using NUL bytes
+var MaxMean = false
+
+// Dryness toggles checking for binary files using NUL bytes
+var Dryness = false
 
 // SortBy sets which column output in formatter should be sorted by
 var SortBy = ""
@@ -130,9 +159,6 @@ var FileOutput = ""
 // PathDenyList sets the paths that should be skipped
 var PathDenyList = []string{}
 
-// DirectoryWalkerJobWorkers is the number of workers which will walk the directory tree
-var DirectoryWalkerJobWorkers = runtime.NumCPU()
-
 // FileListQueueSize is the queue of files found and ready to be read into memory
 var FileListQueueSize = runtime.NumCPU()
 
@@ -141,6 +167,9 @@ var FileProcessJobWorkers = runtime.NumCPU() * 4
 
 // FileSummaryJobQueueSize is the queue used to hold processed file statistics before formatting
 var FileSummaryJobQueueSize = runtime.NumCPU()
+
+// DirectoryWalkerJobWorkers is the number of workers which will walk the directory tree
+var DirectoryWalkerJobWorkers = 8
 
 // AllowListExtensions is a list of extensions which are allowed to be processed
 var AllowListExtensions = []string{}
@@ -157,7 +186,7 @@ var AverageWage int64 = 56286
 // Overhead is the overhead multiplier for corporate overhead (facilities, equipment, accounting, etc.)
 var Overhead float64 = 2.4
 
-// the effort adjustment factor derived from the cost drivers, i.e. 1.0 if rated nominal
+// EAF is the effort adjustment factor derived from the cost drivers, i.e. 1.0 if rated nominal
 var EAF float64 = 1.0
 
 // GcFileCount is the number of files to process before turning the GC back on
@@ -202,9 +231,6 @@ var LanguageFeaturesMutex = sync.Mutex{}
 // Start time in milli seconds in case we want the total time
 var startTimeMilli = makeTimestampMilli()
 
-// ConfigureLimits configures ulimits where possible
-var ConfigureLimits func()
-
 // ConfigureGc needs to be set outside of ProcessConstants because it should only be enabled in command line
 // mode https://github.com/boyter/scc/issues/32
 func ConfigureGc() {
@@ -248,11 +274,11 @@ func ProcessConstants() {
 	// Configure COCOMO setting
 	_, ok := projectType[strings.ToLower(CocomoProjectType)]
 	if !ok {
-		// lets see if we can turn it into a custom one
+		// let's see if we can turn it into a custom one
 		spl := strings.Split(CocomoProjectType, ",")
 		val := []float64{}
 		if len(spl) == 5 {
-			// lets try to convert to float if we can
+			// let's try to convert to float if we can
 			for i := 1; i < 5; i++ {
 				f, err := strconv.ParseFloat(spl[i], 64)
 				if err == nil {
@@ -287,7 +313,7 @@ func ProcessConstants() {
 	}
 
 	// Fix for https://github.com/boyter/scc/issues/250
-	fixedPath := []string{}
+	fixedPath := make([]string, 0, len(PathDenyList))
 	for _, path := range PathDenyList {
 		fixedPath = append(fixedPath, strings.TrimRight(path, "/"))
 	}
@@ -312,7 +338,7 @@ func setupCountAs() {
 			// See if we can identify based on language name which is the most
 			// reliable as the name should be unique
 			for name := range languageDatabase {
-				if strings.ToLower(name) == strings.ToLower(t[1]) {
+				if strings.EqualFold(name, t[1]) {
 					ExtensionToLanguage[strings.ToLower(t[0])] = []string{name}
 					identified = true
 					if Debug {
@@ -417,7 +443,9 @@ func processLanguageFeature(name string, value Language) {
 	LanguageFeatures[name] = LanguageFeature{
 		Complexity:            complexityTrie,
 		MultiLineComments:     mlCommentTrie,
+		MultiLine:             value.MultiLine,
 		SingleLineComments:    slCommentTrie,
+		LineComment:           value.LineComment,
 		Strings:               stringTrie,
 		Tokens:                tokenTrie,
 		Nested:                value.NestedMultiLine,
@@ -459,6 +487,10 @@ func processFlags() {
 		Generated = true
 	}
 
+	if Dryness {
+		UlocMode = true
+	}
+
 	if Debug {
 		printDebug(fmt.Sprintf("Path Deny List: %v", PathDenyList))
 		printDebug(fmt.Sprintf("Sort By: %s", SortBy))
@@ -473,6 +505,8 @@ func processFlags() {
 		printDebug(fmt.Sprintf("Minified/Generated Detection: %t/%t", Minified, Generated))
 		printDebug(fmt.Sprintf("Ignore Minified/Generated: %t/%t", IgnoreMinified, IgnoreGenerated))
 		printDebug(fmt.Sprintf("IncludeSymLinks: %t", IncludeSymLinks))
+		printDebug(fmt.Sprintf("Uloc: %t", UlocMode))
+		printDebug(fmt.Sprintf("Dryness: %t", Dryness))
 	}
 }
 
@@ -480,13 +514,17 @@ func loadDatabase() map[string]Language {
 	var database map[string]Language
 	startTime := makeTimestampMilli()
 
-	data, err := base64.StdEncoding.DecodeString(languages)
+	gzData, err := base64.StdEncoding.DecodeString(languages)
 	if err != nil {
 		panic(fmt.Sprintf("failed to base64 decode languages: %v", err))
 	}
+	dataReader, err := gzip.NewReader(bytes.NewReader(gzData))
+	if err != nil {
+		panic(fmt.Sprintf("failed to create gzip reader: %v", err))
+	}
 
 	var json = jsoniter.ConfigCompatibleWithStandardLibrary
-	if err := json.Unmarshal(data, &database); err != nil {
+	if err := json.NewDecoder(dataReader).Decode(&database); err != nil {
 		panic(fmt.Sprintf("languages json invalid: %v", err))
 	}
 
@@ -499,20 +537,25 @@ func loadDatabase() map[string]Language {
 
 func printLanguages() {
 	database := loadDatabase()
-	var names []string
 
+	names := make([]string, 0, len(database))
 	for key := range database {
 		names = append(names, key)
 	}
 
-	sort.Slice(names, func(i, j int) bool {
-		return strings.Compare(strings.ToLower(names[i]), strings.ToLower(names[j])) < 0
+	slices.SortFunc(names, func(a, b string) int {
+		return strings.Compare(strings.ToLower(a), strings.ToLower(b))
 	})
 
 	for _, name := range names {
-		fmt.Println(fmt.Sprintf("%s (%s)", name, strings.Join(append(database[name].Extensions, database[name].FileNames...), ",")))
+		fmt.Printf("%s (%s)\n", name, strings.Join(append(database[name].Extensions, database[name].FileNames...), ","))
 	}
 }
+
+// global variables to deal with ULOC calculations
+var ulocMutex = sync.Mutex{}
+var ulocGlobalCount = map[string]struct{}{}
+var ulocLanguageCount = map[string]map[string]struct{}{}
 
 // Process is the main entry point of the command line it sets everything up and starts running
 func Process() {
@@ -529,13 +572,23 @@ func Process() {
 		DirFilePaths = append(DirFilePaths, ".")
 	}
 
+	filePaths := []string{}
+	dirPaths := []string{}
+
 	// Check if the paths or files added exist and exit if not
 	for _, f := range DirFilePaths {
 		fpath := filepath.Clean(f)
 
-		if _, err := os.Stat(fpath); os.IsNotExist(err) {
-			fmt.Println("file or directory does not exist: " + fpath)
+		s, err := os.Stat(fpath)
+		if err != nil {
+			fmt.Println("file or directory could not be read: " + fpath)
 			os.Exit(1)
+		}
+
+		if s.IsDir() {
+			dirPaths = append(dirPaths, fpath)
+		} else {
+			filePaths = append(filePaths, fpath)
 		}
 	}
 
@@ -547,28 +600,77 @@ func Process() {
 		printDebug(fmt.Sprintf("PathDenyList: %v", PathDenyList))
 	}
 
-	fileListQueue := make(chan *FileJob, FileListQueueSize)             // Files ready to be read from disk
-	fileSummaryJobQueue := make(chan *FileJob, FileSummaryJobQueueSize) // Files ready to be summarised
+	potentialFilesQueue := make(chan *gocodewalker.File, FileListQueueSize) // files that pass the .gitignore checks
+	fileListQueue := make(chan *FileJob, FileListQueueSize)                 // Files ready to be read from disk
+	fileSummaryJobQueue := make(chan *FileJob, FileSummaryJobQueueSize)     // Files ready to be summarised
+
+	fileWalker := gocodewalker.NewParallelFileWalker(dirPaths, potentialFilesQueue)
+	fileWalker.SetErrorHandler(func(e error) bool {
+		printError(e.Error())
+		return true
+	})
+	fileWalker.IgnoreGitIgnore = GitIgnore
+	fileWalker.IgnoreIgnoreFile = Ignore
+	fileWalker.IgnoreGitModules = GitModuleIgnore
+	fileWalker.IncludeHidden = true
+	fileWalker.ExcludeDirectory = PathDenyList
+	fileWalker.SetConcurrency(DirectoryWalkerJobWorkers)
+
+	if !SccIgnore {
+		fileWalker.CustomIgnore = []string{".sccignore"}
+	}
+
+	for _, exclude := range Exclude {
+		regexpResult, err := regexp.Compile(exclude)
+		if err == nil {
+			fileWalker.ExcludeFilenameRegex = append(fileWalker.ExcludeFilenameRegex, regexpResult)
+			fileWalker.ExcludeDirectoryRegex = append(fileWalker.ExcludeDirectoryRegex, regexpResult)
+		} else {
+			printError(err.Error())
+		}
+	}
 
 	go func() {
-		directoryWalker := NewDirectoryWalker(fileListQueue)
+		err := fileWalker.Start()
+		if err != nil {
+			printError(err.Error())
+		}
+	}()
 
-		for _, f := range DirFilePaths {
-			err := directoryWalker.Start(f)
+	go func() {
+		for _, f := range filePaths {
+			fileInfo, err := os.Lstat(f)
 			if err != nil {
-				fmt.Printf("failed to walk %s: %v", f, err)
-				os.Exit(1)
+				continue
+			}
+
+			fileJob := newFileJob(f, f, fileInfo)
+			if fileJob != nil {
+				fileListQueue <- fileJob
 			}
 		}
 
-		directoryWalker.Run()
+		for fi := range potentialFilesQueue {
+			fileInfo, err := os.Lstat(fi.Location)
+			if err != nil {
+				continue
+			}
+
+			if !fileInfo.IsDir() {
+				fileJob := newFileJob(fi.Location, fi.Filename, fileInfo)
+				if fileJob != nil {
+					fileListQueue <- fileJob
+				}
+			}
+		}
+		close(fileListQueue)
 	}()
+
 	go fileProcessorWorker(fileListQueue, fileSummaryJobQueue)
 
 	result := fileSummarize(fileSummaryJobQueue)
-
 	if FileOutput == "" {
-		fmt.Println(result)
+		fmt.Print(result)
 	} else {
 		_ = os.WriteFile(FileOutput, []byte(result), 0644)
 		fmt.Println("results written to " + FileOutput)

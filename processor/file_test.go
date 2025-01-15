@@ -1,12 +1,10 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package processor
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -74,146 +72,6 @@ func TestGetExtensionSecondPass(t *testing.T) {
 	}
 }
 
-func TestWalkDirectoryParallel(t *testing.T) {
-	isLazy = false
-	ProcessConstants()
-
-	AllowListExtensions = []string{"go"}
-	Exclude = []string{}
-	PathDenyList = []string{}
-	Verbose = true
-	Trace = true
-	Debug = true
-	GcFileCount = 10
-
-	inputChan := make(chan *FileJob, 10000)
-
-	dirwalker := NewDirectoryWalker(inputChan)
-	err := dirwalker.Start("../")
-	if err != nil {
-		t.Errorf("dirwalker.Start returned error: %v", err)
-		t.FailNow()
-	}
-	dirwalker.Run()
-
-	count := 0
-	for range inputChan {
-		count++
-	}
-
-	if count == 0 {
-		t.Errorf("Expected at least one file got %d", count)
-	}
-}
-
-func TestWalkDirectoryParallelWorksWithSingleInputFile(t *testing.T) {
-	isLazy = false
-	ProcessConstants()
-
-	AllowListExtensions = []string{"go"}
-	Exclude = []string{"vendor"}
-	PathDenyList = []string{"vendor"}
-	Verbose = true
-	Trace = true
-	Debug = true
-	GcFileCount = 10
-
-	inputChan := make(chan *FileJob, 10000)
-
-	dirwalker := NewDirectoryWalker(inputChan)
-	err := dirwalker.Start("file_test.go")
-	if err != nil {
-		t.Errorf("dirwalker.Start returned error: %v", err)
-		t.FailNow()
-	}
-	dirwalker.Run()
-
-	count := 0
-	for range inputChan {
-		count++
-	}
-
-	if count != 1 {
-		t.Errorf("Expected exactly one file got %d", count)
-	}
-}
-
-func TestWalkDirectoryParallelIgnoresRootTrailingSlash(t *testing.T) {
-	isLazy = false
-	ProcessConstants()
-
-	AllowListExtensions = []string{"go"}
-	Exclude = []string{"vendor"}
-	PathDenyList = []string{"vendor"}
-	Verbose = true
-	Trace = true
-	Debug = true
-	GcFileCount = 10
-
-	inputChan := make(chan *FileJob, 10000)
-
-	dirwalker := NewDirectoryWalker(inputChan)
-	err := dirwalker.Start("file_test.go/")
-	if err != nil {
-		t.Errorf("dirwalker.Start returned error: %v", err)
-		t.FailNow()
-	}
-	dirwalker.Run()
-
-	count := 0
-	for range inputChan {
-		count++
-	}
-
-	if count != 1 {
-		t.Errorf("Expected exactly one file got %d", count)
-	}
-}
-
-// Issue #82 - project .git directory not being filtered when using absolute
-// path argument
-func TestWalkDirectoryParallelIgnoresAbsoluteGitPath(t *testing.T) {
-	isLazy = false
-	ProcessConstants()
-
-	// master is a file extension for ASP.NET, and also a filename (almost)
-	// certain to appear in the .git directory.
-	// This test also relies on the behaviour of treating `master` as a file
-	// with the `master` file extension.
-	AllowListExtensions = []string{"master", "go"}
-	Exclude = []string{"vendor"}
-	PathDenyList = []string{".git", "vendor"}
-	Verbose = true
-	Trace = true
-	Debug = true
-	GcFileCount = 10
-
-	inputChan := make(chan *FileJob, 10000)
-	absBaseDir, _ := filepath.Abs("../")
-	absGitDir := filepath.Join(absBaseDir, ".git")
-
-	dirwalker := NewDirectoryWalker(inputChan)
-	err := dirwalker.Start(absBaseDir)
-	if err != nil {
-		t.Errorf("dirwalker.Start returned error: %v", err)
-		t.FailNow()
-	}
-	dirwalker.Run()
-
-	sawGit := false
-	for fileJob := range inputChan {
-		// We do have .gitignore file to worry about here, so if the suffix is that then ignore
-		if strings.HasPrefix(fileJob.Location, absGitDir) && !strings.HasSuffix(fileJob.Location, ".gitignore") && !strings.Contains(fileJob.Location, ".github") {
-			sawGit = true
-			break
-		}
-	}
-
-	if sawGit {
-		t.Errorf("Expected .git folder to be ignored")
-	}
-}
-
 func TestNewFileJobFullname(t *testing.T) {
 	ProcessConstants()
 	AllowListExtensions = []string{}
@@ -240,6 +98,7 @@ func TestNewFileJob(t *testing.T) {
 func TestNewFileJobGitIgnore(t *testing.T) {
 	AllowListExtensions = []string{}
 	ProcessConstants()
+	CountIgnore = true
 
 	fi, _ := os.Stat("../examples/issue114/.gitignore")
 	job := newFileJob("../examples/issue114/", ".gitignore", fi)
@@ -348,7 +207,7 @@ const letterBytes = "abcdefghijklmnopqrstuvwxyz"
 func randStringBytes(n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+		b[i] = letterBytes[rand.IntN(len(letterBytes))]
 	}
 	return string(b)
 }

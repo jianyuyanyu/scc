@@ -1,16 +1,17 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package processor
 
 import (
 	"bytes"
 	"fmt"
-	"github.com/minio/blake2b-simd"
 	"hash"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 // The below are used as identifiers for the code state machine
@@ -21,7 +22,7 @@ const (
 	SCommentCode       int64 = 4 // Indicates comment after code
 	SMulticomment      int64 = 5
 	SMulticommentCode  int64 = 6 // Indicates multi comment after code
-	SMulticommentBlank int64 = 7 // Indicates multi comment ended with blank afterwards
+	SMulticommentBlank int64 = 7 // Indicates multi comment ended with blank afterward
 	SString            int64 = 8
 	SDocString         int64 = 9
 )
@@ -29,7 +30,7 @@ const (
 // SheBang is a global constant for indicating a shebang file header
 const SheBang string = "#!"
 
-// LineType what type of line are are processing
+// LineType what type of line are processing
 type LineType int32
 
 // These are not meant to be CAMEL_CASE but as it us used by an external project we cannot change it
@@ -91,18 +92,11 @@ func isWhitespace(currentByte byte) bool {
 // Check if this file is binary by checking for nul byte and if so bail out
 // this is how GNU Grep, git and ripgrep check for binary files
 func isBinary(index int, currentByte byte) bool {
-	if index < 10000 && !DisableCheckBinary && currentByte == 0 {
-		return true
-	}
-
-	return false
+	return index < 10000 && !DisableCheckBinary && currentByte == 0
 }
 
 func shouldProcess(currentByte, processBytesMask byte) bool {
-	if currentByte&processBytesMask != currentByte {
-		return false
-	}
-	return true
+	return currentByte&processBytesMask == currentByte
 }
 
 func resetState(currentState int64) int64 {
@@ -117,8 +111,8 @@ func resetState(currentState int64) int64 {
 	return currentState
 }
 
-func stringState(fileJob *FileJob, index int, endPoint int, stringTrie *Trie, endString []byte, currentState int64, ignoreEscape bool) (int, int64) {
-	// Its not possible to enter this state without checking at least 1 byte so it is safe to check -1 here
+func stringState(fileJob *FileJob, index int, endPoint int, endString []byte, currentState int64, ignoreEscape bool) (int, int64) {
+	// It's not possible to enter this state without checking at least 1 byte so it is safe to check -1 here
 	// without checking if it is out of bounds first
 	for i := index; i < endPoint; i++ {
 		index = i
@@ -134,12 +128,11 @@ func stringState(fileJob *FileJob, index int, endPoint int, stringTrie *Trie, en
 		// if there is an escape symbol before us, investigate
 		if fileJob.Content[i-1] == '\\' {
 			num_escapes := 0
-			for j := i - 1; j > 0; j -= 1 {
-				if fileJob.Content[j] == '\\' {
-					num_escapes += 1
-				} else {
+			for j := i - 1; j > 0; j-- {
+				if fileJob.Content[j] != '\\' {
 					break
 				}
+				num_escapes++
 			}
 
 			// if number of escapes is even, all escapes are themselves escaped
@@ -163,7 +156,7 @@ func stringState(fileJob *FileJob, index int, endPoint int, stringTrie *Trie, en
 // This is a special state check pretty much only ever used by Python codebases
 // but potentially it could be expanded to deal with other types
 func docStringState(fileJob *FileJob, index int, endPoint int, stringTrie *Trie, endString []byte, currentState int64) (int, int64) {
-	// Its not possible to enter this state without checking at least 1 byte so it is safe to check -1 here
+	// It's not possible to enter this state without checking at least 1 byte so it is safe to check -1 here
 	// without checking if it is out of bounds first
 	for i := index; i < endPoint; i++ {
 		index = i
@@ -232,7 +225,7 @@ func codeState(
 
 		if shouldProcess(curByte, langFeatures.ProcessMask) {
 			if Duplicates {
-				// Technically this is wrong because we skip bytes so this is not a true
+				// Technically this is wrong because we skip bytes, so this is not a true
 				// hash of the file contents, but for duplicate files it shouldn't matter
 				// as both will skip the same way
 				digestible := []byte{fileJob.Content[index]}
@@ -324,7 +317,6 @@ func commentState(fileJob *FileJob, index int, endPoint int, currentState int64,
 func blankState(
 	fileJob *FileJob,
 	index int,
-	endPoint int,
 	currentState int64,
 	endComments [][]byte,
 	endString []byte,
@@ -408,10 +400,10 @@ func CountStats(fileJob *FileJob) {
 	// crypto secure here either so no need to eat the performance cost of a better
 	// hash method
 	if Duplicates {
-		fileJob.Hash = blake2b.New256()
+		fileJob.Hash, _ = blake2b.New256(nil)
 	}
 
-	// If the file has a length of 0 it is is empty then we say it has no lines
+	// If the file has a length of 0 it is empty then we say it has no lines
 	if fileJob.Bytes == 0 {
 		fileJob.Lines = 0
 		return
@@ -465,7 +457,7 @@ func CountStats(fileJob *FileJob) {
 					&fileJob.Hash,
 				)
 			case SString:
-				index, currentState = stringState(fileJob, index, endPoint, langFeatures.Strings, endString, currentState, ignoreEscape)
+				index, currentState = stringState(fileJob, index, endPoint, endString, currentState, ignoreEscape)
 			case SDocString:
 				// For a docstring we can either move into blank in which case we count it as a docstring
 				// or back into code in which case it should be counted as code
@@ -486,7 +478,6 @@ func CountStats(fileJob *FileJob) {
 				index, currentState, endString, endComments, ignoreEscape = blankState(
 					fileJob,
 					index,
-					endPoint,
 					currentState,
 					endComments,
 					endString,
@@ -566,8 +557,18 @@ func CountStats(fileJob *FileJob) {
 		}
 	}
 
-	if Duplicates {
-		fileJob.Hash.Sum(nil)
+	if UlocMode && Files {
+		uloc := map[string]struct{}{}
+		for _, l := range strings.Split(strings.TrimRight(string(fileJob.Content), "\n"), "\n") {
+			uloc[l] = struct{}{}
+		}
+		fileJob.Uloc = len(uloc)
+	}
+
+	if MaxMean {
+		for _, l := range strings.Split(strings.TrimRight(string(fileJob.Content), "\n"), "\n") {
+			fileJob.LineLength = append(fileJob.LineLength, len(l))
+		}
 	}
 
 	isGenerated := false
@@ -699,7 +700,6 @@ func fileProcessorWorker(input chan *FileJob, output chan *FileJob) {
 			printDebug(fmt.Sprintf("milliseconds reading files into memory: %d", makeTimestampMilli()-startTime))
 		}
 	}()
-
 }
 
 // Process a single file
@@ -723,8 +723,8 @@ func processFile(job *FileJob) bool {
 			remapped = unknownRemapLanguage(job)
 		}
 
-		// if we didn't remap we then want to see if its a #! map
-		if remapped == false {
+		// if we didn't remap we then want to see if it's a #! map
+		if !remapped {
 			cutoff := 200
 
 			// To avoid runtime panic check if the content we are cutting is smaller than 200
@@ -796,6 +796,23 @@ func processFile(job *FileJob) bool {
 			printWarn(fmt.Sprintf("skipping file identified as binary: %s", job.Location))
 		}
 		return false
+	}
+
+	// This needs to be at the end so we can ensure duplicate detection et.al run first
+	// avoiding inflating the counts
+	if UlocMode {
+		ulocMutex.Lock()
+
+		for _, l := range strings.Split(strings.TrimRight(string(job.Content), "\n"), "\n") {
+			ulocGlobalCount[l] = struct{}{}
+
+			_, ok := ulocLanguageCount[job.Language]
+			if !ok {
+				ulocLanguageCount[job.Language] = map[string]struct{}{}
+			}
+			ulocLanguageCount[job.Language][l] = struct{}{}
+		}
+		ulocMutex.Unlock()
 	}
 
 	return true

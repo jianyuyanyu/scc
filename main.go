@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package main
 
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/boyter/scc/v3/processor"
@@ -13,9 +14,9 @@ import (
 
 //go:generate go run scripts/include.go
 func main() {
-	//f, _ := os.Create("scc.pprof")
-	//pprof.StartCPUProfile(f)
-	//defer pprof.StopCPUProfile()
+	// f, _ := os.Create("scc.pprof")
+	// pprof.StartCPUProfile(f)
+	// defer pprof.StopCPUProfile()
 
 	if len(os.Args) == 2 && strings.HasPrefix(os.Args[1], "@") {
 		// handle "scc @flags.txt" syntax
@@ -27,7 +28,7 @@ func main() {
 		}
 
 		args := strings.Split(string(b), "\n")
-		var newArgs []string
+		newArgs := make([]string, 0, len(args))
 		for _, x := range args {
 			newArgs = append(newArgs, strings.TrimSpace(x))
 		}
@@ -41,9 +42,6 @@ func main() {
 		Version: processor.Version,
 		Run: func(cmd *cobra.Command, args []string) {
 			processor.DirFilePaths = args
-			if processor.ConfigureLimits != nil {
-				processor.ConfigureLimits()
-			}
 			processor.ConfigureGc()
 			processor.ConfigureLazy(true)
 			processor.Process()
@@ -52,6 +50,34 @@ func main() {
 
 	flags := rootCmd.PersistentFlags()
 
+	flags.BoolVarP(
+		&processor.MaxMean,
+		"character",
+		"m",
+		false,
+		"calculate max and mean characters per line",
+	)
+	flags.BoolVarP(
+		&processor.Percent,
+		"percent",
+		"p",
+		false,
+		"include percentage values in output",
+	)
+	flags.BoolVarP(
+		&processor.UlocMode,
+		"uloc",
+		"u",
+		false,
+		"calculate the number of unique lines of code (ULOC) for the project",
+	)
+	flags.BoolVarP(
+		&processor.Dryness,
+		"dryness",
+		"a",
+		false,
+		"calculate the DRYness of the project (implies --uloc)",
+	)
 	flags.BoolVar(
 		&processor.DisableCheckBinary,
 		"binary",
@@ -77,10 +103,28 @@ func main() {
 		"disables .ignore file logic",
 	)
 	flags.BoolVar(
+		&processor.SccIgnore,
+		"no-scc-ignore",
+		false,
+		"disables .sccignore file logic",
+	)
+	flags.BoolVar(
 		&processor.GitIgnore,
 		"no-gitignore",
 		false,
 		"disables .gitignore file logic",
+	)
+	flags.BoolVar(
+		&processor.GitModuleIgnore,
+		"no-gitmodule",
+		false,
+		"disables .gitmodules file logic",
+	)
+	flags.BoolVar(
+		&processor.CountIgnore,
+		"count-ignore",
+		false,
+		"set to allow .gitignore and .ignore files to be counted",
 	)
 	flags.BoolVar(
 		&processor.Debug,
@@ -100,12 +144,36 @@ func main() {
 		10000,
 		"number of files to parse before turning the GC on",
 	)
+	flags.IntVar(
+		&processor.FileListQueueSize,
+		"file-list-queue-size",
+		runtime.NumCPU(),
+		"the size of the queue of files found and ready to be read into memory",
+	)
+	flags.IntVar(
+		&processor.FileProcessJobWorkers,
+		"file-process-job-workers",
+		runtime.NumCPU(),
+		"number of goroutine workers that process files collecting stats",
+	)
+	flags.IntVar(
+		&processor.FileSummaryJobQueueSize,
+		"file-summary-job-queue-size",
+		runtime.NumCPU(),
+		"the size of the queue used to hold processed file statistics before formatting",
+	)
+	flags.IntVar(
+		&processor.DirectoryWalkerJobWorkers,
+		"directory-walker-job-workers",
+		8,
+		"controls the maximum number of workers which will walk the directory tree",
+	)
 	flags.StringVarP(
 		&processor.Format,
 		"format",
 		"f",
 		"tabular",
-		"set output format [tabular, wide, json, csv, csv-stream, cloc-yaml, html, html-table, sql, sql-insert, openmetrics]",
+		"set output format [tabular, wide, json, json2, csv, csv-stream, cloc-yaml, html, html-table, sql, sql-insert, openmetrics]",
 	)
 	flags.StringSliceVarP(
 		&processor.AllowListExtensions,
@@ -125,8 +193,8 @@ func main() {
 		&processor.ExcludeFilename,
 		"exclude-file",
 		"n",
-		[]string{},
-		"ignore files with matching names [comma separated list: e.g. main.go,_test.go]",
+		[]string{"package-lock.json", "Cargo.lock", "yarn.lock", "pubspec.lock", "Podfile.lock", "pnpm-lock.yaml"},
+		"ignore files with matching names",
 	)
 	flags.BoolVarP(
 		&processor.Languages,
@@ -176,6 +244,12 @@ func main() {
 		"no-size",
 		false,
 		"remove size calculation output",
+	)
+	flags.BoolVar(
+		&processor.HBorder,
+		"no-hborder",
+		false,
+		"remove horizontal borders between sections",
 	)
 	flags.StringVar(
 		&processor.SizeUnit,
@@ -252,7 +326,7 @@ func main() {
 	flags.StringArrayVarP(
 		&processor.Exclude,
 		"not-match",
-		"M",
+		`M`,
 		[]string{},
 		"ignore files and directories matching regular expression",
 	)
@@ -295,7 +369,7 @@ func main() {
 		&processor.NoLarge,
 		"no-large",
 		false,
-		"ignore files over certain byte and line size set by max-line-count and max-byte-count",
+		"ignore files over certain byte and line size set by large-line-count and large-byte-count",
 	)
 	flags.BoolVar(
 		&processor.IncludeSymLinks,

@@ -7,6 +7,9 @@ GREEN='\033[1;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+echo "Running go generate..."
+go generate
+
 echo "Running go fmt..."
 go fmt ./...
 
@@ -51,7 +54,7 @@ fi
 
 echo "Building HTML report..."
 
-./scc --format html -o SCC-OUTPUT-REPORT.html
+./scc --format html -a --by-file -i go -o SCC-OUTPUT-REPORT.html
 
 echo "Running integration tests..."
 
@@ -254,15 +257,6 @@ else
     exit
 fi
 
-if ./scc -v . | grep -q "skipping directory due to ignore: vendor" ; then
-    echo -e "${GREEN}PASSED ignore file directory check"
-else
-    echo -e "${RED}======================================================="
-    echo -e "FAILED ignore file directory check"
-    echo -e "=======================================================${NC}"
-    exit
-fi
-
 # Try out duplicates
 for i in {1..100}
 do
@@ -374,8 +368,8 @@ else
 fi
 
 touch ./examples/ignore/ignorefile.txt
-a=$(./scc --by-file | grep ignorefile)
-b=$(./scc --by-file --no-ignore | grep ignorefile)
+a=$(./scc --by-file --no-scc-ignore | grep ignorefile)
+b=$(./scc --by-file --no-ignore --no-scc-ignore | grep ignorefile)
 if [ "$a" == "$b" ]; then
     echo "$a"
     echo "$b"
@@ -388,8 +382,8 @@ else
 fi
 
 touch ./examples/ignore/gitignorefile.txt
-a=$(./scc --by-file | grep gitignorefile)
-b=$(./scc --by-file --no-gitignore | grep gitignorefile)
+a=$(./scc --by-file --no-scc-ignore | grep gitignorefile)
+b=$(./scc --by-file --no-gitignore --no-scc-ignore | grep gitignorefile)
 if [ "$a" == "$b" ]; then
     echo "$a"
     echo "$b"
@@ -410,8 +404,8 @@ else
     echo -e "${GREEN}PASSED include-ext option"
 fi
 
-a=$(./scc -i js ./examples/minified/)
-b=$(./scc -i js -z ./examples/minified/)
+a=$(./scc -i js ./examples/minified/ --no-scc-ignore)
+b=$(./scc -i js -z ./examples/minified/ --no-scc-ignore)
 if [ "$a" == "$b" ]; then
     echo "$a"
     echo "$b"
@@ -423,8 +417,8 @@ else
     echo -e "${GREEN}PASSED minified check"
 fi
 
-a=$(./scc -i js -z ./examples/minified/)
-b=$(./scc -i js -z --no-min-gen ./examples/minified/)
+a=$(./scc -i js -z ./examples/minified/ --no-scc-ignore)
+b=$(./scc -i js -z --no-min-gen ./examples/minified/ --no-scc-ignore)
 if [ "$a" == "$b" ]; then
     echo "$a"
     echo "$b"
@@ -436,8 +430,8 @@ else
     echo -e "${GREEN}PASSED minified ignored check"
 fi
 
-a=$(./scc ./examples/symlink/)
-b=$(./scc --include-symlinks ./examples/symlink/)
+a=$(./scc ./examples/symlink/ --no-scc-ignore)
+b=$(./scc --include-symlinks ./examples/symlink/ --no-scc-ignore)
 if [ "$a" == "$b" ]; then
     echo "$a"
     echo "$b"
@@ -449,7 +443,7 @@ else
     echo -e "${GREEN}PASSED minified ignored check"
 fi
 
-if ./scc ./examples/minified/ --no-min-gen | grep -q "\$0"; then
+if ./scc ./examples/minified/ --no-min-gen --no-scc-ignore | grep -q "\$0"; then
     echo -e "${GREEN}PASSED removed min"
 else
     echo -e "${RED}======================================================="
@@ -458,7 +452,7 @@ else
     exit
 fi
 
-if ./scc ./examples/generated/ --no-min-gen | grep -q "\$0"; then
+if ./scc ./examples/generated/ --no-min-gen --no-scc-ignore | grep -q "\$0"; then
     echo -e "${GREEN}PASSED removed gen"
 else
     echo -e "${RED}======================================================="
@@ -467,7 +461,7 @@ else
     exit
 fi
 
-if ./scc -z ./examples/generated/ | grep -q "C Header (gen)"; then
+if ./scc -z ./examples/generated/ --no-scc-ignore | grep -q "C Header (gen)"; then
     echo -e "${GREEN}PASSED flagged as gen"
 else
     echo -e "${RED}======================================================="
@@ -476,7 +470,7 @@ else
     exit
 fi
 
-if ./scc ./examples/minified/ -i js -z | grep -q "JavaScript (min)"; then
+if ./scc ./examples/minified/ -i js -z --no-scc-ignore | grep -q "JavaScript (min)"; then
     echo -e "${GREEN}PASSED flagged as min"
 else
     echo -e "${RED}======================================================="
@@ -602,15 +596,6 @@ else
     exit
 fi
 
-if ./scc ./examples/issue149/ | grep -q "gitignore"; then
-    echo -e "${GREEN}PASSED empty gitignore"
-else
-    echo -e "${RED}======================================================="
-    echo -e "FAILED empty gitignore"
-    echo -e "=======================================================${NC}"
-    exit
-fi
-
 if ./scc -i css ./examples/issue152/ | grep -q "CSS"; then
     echo -e "${GREEN}PASSED -i extension check"
 else
@@ -665,6 +650,24 @@ else
     exit
 fi
 
+if ./scc -f json  -a | grep -q "ULOC"; then
+    echo -e "${GREEN}PASSED json uloc check"
+else
+    echo -e "${RED}======================================================="
+    echo -e "FAILED json uloc check"
+    echo -e "=======================================================${NC}"
+    exit
+fi
+
+if ./scc -f json2 | grep -q "Bytes"; then
+    echo -e "${GREEN}PASSED json2 bytes check"
+else
+    echo -e "${RED}======================================================="
+    echo -e "FAILED json bytes check"
+    echo -e "=======================================================${NC}"
+    exit
+fi
+
 if ./scc | grep -q "megabytes"; then
     echo -e "${GREEN}PASSED bytes check"
 else
@@ -674,7 +677,7 @@ else
     exit
 fi
 
-if ./scc -f csv | grep -q "Language,Lines,Code,Comments,Blanks,Complexity,Bytes"; then
+if ./scc -f csv | grep -q "Language,Lines,Code,Comments,Blanks,Complexity,Bytes,Files,ULOC"; then
     echo -e "${GREEN}PASSED csv summary"
 else
     echo -e "${RED}======================================================="
@@ -737,7 +740,7 @@ else
     exit
 fi
 
-./scc --format-multi "tabular:output.tab,wide:output.wide,json:output.json,csv:output.csv,cloc-yaml:output.yaml,html:output.html,html-table:output.html2,sql:output.sql"
+./scc --format-multi "tabular:output.tab,wide:output.wide,json:output.json,json2:output2.json,csv:output.csv,cloc-yaml:output.yaml,html:output.html,html-table:output.html2,sql:output.sql"
 
 if test -f output.tab; then
     echo -e "${GREEN}PASSED output.tab check"
@@ -762,6 +765,15 @@ if test -f output.json; then
 else
     echo -e "${RED}======================================================="
     echo -e "FAILED output.json check"
+    echo -e "=======================================================${NC}"
+    exit
+fi
+
+if test -f output2.json; then
+    echo -e "${GREEN}PASSED output2.json check"
+else
+    echo -e "${RED}======================================================="
+    echo -e "FAILED output2.json check"
     echo -e "=======================================================${NC}"
     exit
 fi
@@ -882,10 +894,123 @@ else
     echo -e "${GREEN}PASSED exclude-ext check"
 fi
 
+# Issue 457
+if ./scc -M ".*" | grep -q "0.000 megabytes"; then
+    echo -e "${GREEN}PASSED issue 457"
+else
+    echo -e "${RED}======================================================="
+    echo -e "FAILED issue 457"
+    echo -e "=======================================================${NC}"
+    exit
+fi
+
+# Line length support
+if ./scc -m | grep -q "MaxLine / MeanLine"; then
+    echo -e "${GREEN}PASSED character option"
+else
+    echo -e "${RED}======================================================="
+    echo -e "FAILED character option"
+    echo -e "=======================================================${NC}"
+    exit
+fi
+
 # Try out specific languages
-for i in 'Bosque ' 'Flow9 ' 'Bitbucket Pipeline ' 'Docker ignore ' 'Q# ' 'Futhark ' 'Alloy ' 'Wren ' 'Monkey C ' 'Alchemist ' 'Luna ' 'ignore ' 'XML Schema ' 'Web Services' 'Go ' 'Java ' 'Boo ' 'License ' 'BASH ' 'C Shell ' 'Korn Shell ' 'Makefile ' 'Shell ' 'Zsh ' 'Rakefile ' 'Gemfile ' 'Dockerfile ' 'Yarn ' 'Sieve ' 'F# ' 'Elm ' 'Terraform ' 'Clojure ' 'C# ' 'LLVM IR ' 'HAML ' 'FXML ' 'DM ' 'Nushell ' 'Racket ' 'DOT ' 'YAML ' 'Teal ' 'FSL ' 'INI ' 'Hare ' 'Templ ' 'Cuda ' 'GraphQL '
+specificLanguages=(
+    'ABNF '
+    'Alchemist '
+    'Alloy '
+    'Arturo '
+    'Astro '
+    'AWK '
+    'BASH '
+    'Bean '
+    'Bicep '
+    'Bitbucket Pipeline '
+    'Boo '
+    'Bosque '
+    'C Shell '
+    'C# '
+    'Cairo '
+    'Cangjie '
+    'Chapel '
+    'Circom '
+    'Clipper '
+    'Clojure '
+    'Cuda '
+    'DAML '
+    'DM '
+    'Docker ignore '
+    'Dockerfile '
+    'DOT '
+    'Elm '
+    'EmiT '
+    'F# '
+    'Factor '
+    'Flow9 '
+    'FSL '
+    'Futhark '
+    'FXML '
+    'Gemfile '
+    'Gleam '
+    'Go '
+    'Godot Scene '
+    'GraphQL '
+    'Gwion '
+    'HAML '
+    'Hare '
+    'ignore '
+    'INI '
+    'Java '
+    'JSON5 '
+    'JSONC '
+    'jq '
+    'Korn Shell '
+    'LALRPOP '
+    'License '
+    'LiveScript '
+    'LLVM IR '
+    'Luna '
+    'Makefile '
+    'Metal '
+    'Monkey C '
+    'Moonbit '
+    'Nushell '
+    'OpenQASM '
+    'Pkl '
+    'Proto '
+    'Q# '
+    'R '
+    'Racket '
+    'Rakefile '
+    'Redscript '
+    'Shell '
+    'Sieve '
+    'Slang '
+    'Slint '
+    'Smalltalk '
+    'Snakemake '
+    'Stan '
+    'Teal '
+    'Tera '
+    'Templ '
+    'Terraform '
+    'TTCN-3 '
+    'TypeSpec '
+    'Typst '
+    'Up '
+    'Vala '
+    'Web Services '
+    'wenyan '
+    'Wren '
+    'XML Schema '
+    'YAML '
+    'Yarn '
+    'ZoKrates '
+    'Zsh '
+)
+for i in "${specificLanguages[@]}"
 do
-    if ./scc "examples/language/" | grep -q "$i "; then
+    if ./scc "examples/language/" --no-scc-ignore | grep -q "$i"; then
         echo -e "${GREEN}PASSED $i Language Check"
     else
         echo -e "${RED}======================================================="
@@ -895,11 +1020,10 @@ do
     fi
 done
 
-
 # Issue339
 for i in 'MATLAB ' 'Objective C '
 do
-    if ./scc "examples/issue339/" | grep -q "$i "; then
+    if ./scc "examples/issue339/" --no-scc-ignore | grep -q "$i "; then
         echo -e "${GREEN}PASSED $i Language Check"
     else
         echo -e "${RED}======================================================="
@@ -910,10 +1034,10 @@ do
 done
 
 # Issue345 (https://github.com/boyter/scc/issues/345)
-a=$(./scc "examples/issue345/" -f csv | sed -n '2 p')
-b="C++,4,3,1,0,0,76"
+a=$(./scc "examples/issue345/" -f csv --no-scc-ignore | sed -n '2 p')
+b="C++,4,3,1,0,0,76,1,0"
 if [ "$a" == "$b" ]; then
-    echo -e "{GREEN}PASSED string termination check"
+    echo -e "${GREEN}PASSED String Termination Check"
 else
     echo -e "$a"
     echo -e "${RED}======================================================="
@@ -922,11 +1046,98 @@ else
     exit
 fi
 
+# Regression issue https://github.com/boyter/scc/issues/379
+Issue379Line=$(./scc -f csv "examples/issue379/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 2)
+Issue379Code=$(./scc -f csv "examples/issue379/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 3)
+Issue379Comments=$(./scc -f csv "examples/issue379/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 4)
+Issue379Blanks=$(./scc -f csv "examples/issue379/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 5)
+Issue379Complexity=$(./scc -f csv "examples/issue379/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 6)
+if [ $Issue379Line -ne 7 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue379 line counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue379Code -ne 4 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue379 code counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue379Comments -ne 2 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue379 comments counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue379Blanks -ne 1 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue379 blanks counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue379Complexity -ne 1 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue379 complexity counting"
+    echo -e "=======================================================${NC}"
+    exit
+else
+    echo -e "${GREEN}PASSED Issue379 Regression Check"
+fi
+
+# Regression tests for https://github.com/boyter/scc/issues/564
+Issue564GoCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore | grep 'Go' | cut -d ',' -f 8)
+Issue564PyCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore | grep 'Python' | cut -d ',' -f 8)
+Issue564GoExcludeCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level2 | grep 'Go' | cut -d ',' -f 8)
+Issue564PyExcludeCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level2 | grep 'Python' | cut -d ',' -f 8)
+Issue564GoExclude2Count=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level1 | grep 'Go' | cut -d ',' -f 8)
+Issue564PyExclude2Count=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level1 | grep 'Python' | cut -d ',' -f 8)
+Issue564GoExcludeMultiCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level1/level2 | grep 'Go' | cut -d ',' -f 8)
+Issue564PyExcludeMultiCount=$(./scc -f csv "examples/issue564/" --no-scc-ignore --exclude-dir=level1/level2 | grep 'Python' | cut -d ',' -f 8)
+if [ $Issue564GoCount -ne 2 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 Go file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564PyCount -ne 3 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 Python file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ "$Issue564PyExcludeCount" != "" ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level2 Python file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564GoExcludeCount -ne 2 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level2 Go file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564PyExclude2Count -ne 1 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level1 Python file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564GoExclude2Count -ne 1 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level1 Go file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564GoExcludeMultiCount -ne 2 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level1/level2 Go file counting"
+    echo -e "=======================================================${NC}"
+    exit
+elif [ $Issue564PyExcludeMultiCount -ne 1 ] ; then
+    echo -e "${RED}======================================================="
+    echo -e "FAILED Issue564 exclude level1/level2 Python file counting"
+    echo -e "=======================================================${NC}"
+    exit
+else
+    echo -e "${GREEN}PASSED Issue564 Regression Check"
+fi
 
 # Extra case for longer languages that are normally truncated
 for i in 'CloudFormation (YAM' 'CloudFormation (JSO'
 do
-    if ./scc "examples/language/" | grep -q "$i"; then
+    if ./scc "examples/language/" --no-scc-ignore | grep -q "$i"; then
         echo -e "${GREEN}PASSED $i Language Check"
     else
         echo -e "${RED}======================================================="
@@ -960,11 +1171,13 @@ rm ./examples/ignore/ignorefile.txt
 rm ./output.tab
 rm ./output.wide
 rm ./output.json
+rm ./output2.json
 rm ./output.csv
 rm ./output.yaml
 rm ./output.html
 rm ./output.html2
 rm ./output.sql
+rm ./code.db
 
 
 echo -e "${GREEN}================================================="

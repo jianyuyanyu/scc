@@ -2,27 +2,56 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/boyter/scc/v3/processor"
-	"github.com/rs/zerolog/log"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/boyter/scc/v3/processor"
+	"github.com/boyter/simplecache"
+	jsoniter "github.com/json-iterator/go"
+	"github.com/rs/zerolog/log"
 )
 
-var uniqueCode = "unique_code"
-var cache = NewSimpleCache(1000)
-var countingSemaphore = make(chan bool, 1)
+var (
+	uniqueCode = "unique_code"
+	cache      = simplecache.New[[]processor.LanguageSummary](simplecache.Option{
+		MaxItems: intPtr(1000),
+		MaxAge:   timePtr(time.Hour * 72),
+	})
+	countingSemaphore = make(chan bool, 1)
+	tmpDir            = os.TempDir()
+	json              = jsoniter.ConfigCompatibleWithStandardLibrary
+	locationLog       = []string{}
+	locationLogMutex  = sync.Mutex{}
+)
+
+func intPtr(i int) *int {
+	return &i
+}
+
+func timePtr(t time.Duration) *time.Duration {
+	return &t
+}
 
 func main() {
+	http.HandleFunc("/health-check/", func(w http.ResponseWriter, r *http.Request) {
+		locationLogMutex.Lock()
+		for _, l := range locationLog {
+			_, _ = w.Write([]byte(l + "\n"))
+		}
+		locationLogMutex.Unlock()
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		loc, err := processUrlPath(r.URL.Path)
 		if err != nil {
@@ -31,18 +60,11 @@ func main() {
 			return
 		}
 
-		data, err := process(1, loc)
+		appendLocationLog(loc.String())
+
+		res, err := process(1, loc)
 		if err != nil {
 			log.Error().Str(uniqueCode, "03ec75c3").Err(err).Str("loc", loc.String()).Send()
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("something bad happened sorry"))
-			return
-		}
-
-		var res []processor.LanguageSummary
-		err = json.Unmarshal(data, &res)
-		if err != nil {
-			log.Error().Str(uniqueCode, "9192cad8").Err(err).Send()
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte("something bad happened sorry"))
 			return
@@ -52,6 +74,10 @@ func main() {
 		wage := tryParseInt(strings.TrimSpace(strings.ToLower(r.URL.Query().Get("avg-wage"))), 56286)
 		title, value := calculate(category, wage, res)
 
+		if r.URL.Query().Get("lower") != "" {
+			title = strings.ToLower(title)
+		}
+
 		s := formatCount(float64(value))
 
 		textLength := "250"
@@ -59,14 +85,30 @@ func main() {
 			textLength = "200"
 		}
 
+		bs := parseBadgeSettings(r.URL.Query())
+
 		log.Info().Str(uniqueCode, "42c5269c").Str("loc", loc.String()).Str("category", category).Send()
 		w.Header().Set("Content-Type", "image/svg+xml;charset=utf-8")
-		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="20"><linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient><clipPath id="a"><rect width="100" height="20" rx="3" fill="#fff"/></clipPath><g clip-path="url(#a)"><path fill="#555" d="M0 0h69v20H0z"/><path fill="#4c1" d="M69 0h31v20H69z"/><path fill="url(#b)" d="M0 0h100v20H0z"/></g><g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="110"> <text x="355" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="590">` + title + `</text><text x="355" y="140" transform="scale(.1)" textLength="590">` + title + `</text><text x="835" y="150" fill="#010101" fill-opacity=".3" transform="scale(.1)" textLength="` + textLength + `">` + s + `</text><text x="835" y="140" transform="scale(.1)" textLength="` + textLength + `">` + s + `</text></g> </svg>`))
+		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="20"><linearGradient id="b" x2="0" y2="100%"><stop offset="0" stop-color="` + bs.TopShadowAccentColor + `" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient><clipPath id="a"><rect width="100" height="20" rx="3" fill="#` + bs.FontColor + `"/></clipPath><g clip-path="url(#a)"><path fill="#` + bs.TitleBackgroundColor + `" d="M0 0h69v20H0z"/><path fill="#` + bs.BadgeBackgroundColor + `" d="M69 0h31v20H69z"/><path fill="url(#b)" d="M0 0h100v20H0z"/></g><g fill="#` + bs.FontColor + `" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="110"> <text x="355" y="150" fill="#` + bs.TextShadowColor + `" fill-opacity=".3" transform="scale(.1)" textLength="590">` + title + `</text><text x="355" y="140" transform="scale(.1)" textLength="590">` + title + `</text><text x="835" y="150" fill="#` + bs.TextShadowColor + `" fill-opacity=".3" transform="scale(.1)" textLength="` + textLength + `">` + s + `</text><text x="835" y="140" transform="scale(.1)" textLength="` + textLength + `">` + s + `</text></g> </svg>`))
 	})
 
 	addr := ":8080"
 	log.Info().Str(uniqueCode, "1876ce1e").Str("addr", addr).Msg("serving")
-	http.ListenAndServe(addr, nil).Error()
+	if err := http.ListenAndServe(addr, nil); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error().Str(uniqueCode, "c28556e8").Err(err).Send()
+		os.Exit(1)
+	}
+}
+
+func appendLocationLog(log string) {
+	locationLogMutex.Lock()
+	defer locationLogMutex.Unlock()
+
+	locationLog = append(locationLog, log)
+
+	if len(locationLog) > 100 {
+		locationLog = locationLog[1:]
+	}
 }
 
 func calculate(category string, wage int, res []processor.LanguageSummary) (string, int64) {
@@ -74,23 +116,17 @@ func calculate(category string, wage int, res []processor.LanguageSummary) (stri
 	var value int64
 
 	switch category {
-	case "codes":
-		fallthrough
-	case "code":
+	case "code", "codes":
 		title = "Code lines"
 		for _, x := range res {
 			value += x.Code
 		}
-	case "blank":
-		fallthrough
-	case "blanks":
+	case "blank", "blanks":
 		title = "Blank lines"
 		for _, x := range res {
 			value += x.Blank
 		}
-	case "comment":
-		fallthrough
-	case "comments":
+	case "comment", "comments":
 		title = "Comments"
 		for _, x := range res {
 			value += x.Comment
@@ -102,9 +138,7 @@ func calculate(category string, wage int, res []processor.LanguageSummary) (stri
 		}
 
 		value = int64(estimateCost(value, wage))
-	case "lines": // lines is the default
-		fallthrough
-	case "line": // lines is the default
+	case "line", "lines": // lines is the default
 		fallthrough
 	default:
 		//
@@ -162,6 +196,55 @@ func processUrlPath(path string) (location, error) {
 	}, nil
 }
 
+type badgeSettings struct {
+	FontColor            string
+	TextShadowColor      string
+	TopShadowAccentColor string
+	TitleBackgroundColor string
+	BadgeBackgroundColor string
+}
+
+// Parses badge settings from url query params
+// if error, ignore and return default badge settings
+func parseBadgeSettings(values url.Values) *badgeSettings {
+	bs := badgeSettings{
+		FontColor:            "fff",
+		TextShadowColor:      "010101",
+		TopShadowAccentColor: "bbb",
+		TitleBackgroundColor: "555",
+		BadgeBackgroundColor: "4c1",
+	}
+
+	fontColor := strings.ToLower(values.Get("font-color"))
+	textShadowColor := strings.ToLower(values.Get("font-shadow-color"))
+	topShadowAccentColor := strings.ToLower(values.Get("top-shadow-accent-color"))
+	titleBackgroundColor := strings.ToLower(values.Get("title-bg-color"))
+	badgeBackgroundColor := strings.ToLower(values.Get("badge-bg-color"))
+
+	// Ensure valid colors
+	r, err := regexp.Compile(`^(?:(?:[\da-f]{3}){1,2}|(?:[\da-f]{4}){1,2})$`)
+	if err != nil {
+		return &bs
+	}
+	if r.MatchString(fontColor) {
+		bs.FontColor = fontColor
+	}
+	if r.MatchString(textShadowColor) {
+		bs.TextShadowColor = textShadowColor
+	}
+	if r.MatchString(topShadowAccentColor) {
+		bs.TopShadowAccentColor = topShadowAccentColor
+	}
+	if r.MatchString(titleBackgroundColor) {
+		bs.TitleBackgroundColor = titleBackgroundColor
+	}
+	if r.MatchString(badgeBackgroundColor) {
+		bs.BadgeBackgroundColor = badgeBackgroundColor
+	}
+
+	return &bs
+}
+
 // formatCount turns a float into a string usable for display
 // to the user so, 2532 would be 2.5k and such up the various
 // units
@@ -194,7 +277,7 @@ func formatCount(count float64) string {
 	return fmt.Sprintf("%v", math.Round(count))
 }
 
-func process(id int, s location) ([]byte, error) {
+func process(id int, s location) ([]processor.LanguageSummary, error) {
 	countingSemaphore <- true
 	defer func() {
 		<-countingSemaphore // remove one to free up concurrency
@@ -206,15 +289,8 @@ func process(id int, s location) ([]byte, error) {
 	}
 
 	// Clean target just to be sure
-	cmdArgs := []string{
-		"-rf",
-		"/tmp/scc-tmp-path-" + strconv.Itoa(id),
-	}
-
-	cmd := exec.Command("rm", cmdArgs...)
-	err := cmd.Run()
-
-	if err != nil {
+	targetPath := filepath.Join(tmpDir, "scc-tmp-path-"+strconv.Itoa(id))
+	if err := os.RemoveAll(targetPath); err != nil {
 		return nil, err
 	}
 
@@ -223,12 +299,12 @@ func process(id int, s location) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	cmd = exec.CommandContext(ctx, "git", "clone", "--depth=1", s.String(), "/tmp/scc-tmp-path-"+strconv.Itoa(id))
+	cmd := exec.CommandContext(ctx, "git", "clone", "--depth=1", s.String(), targetPath)
 
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-	_, err = cmd.Output()
+	_, err := cmd.Output()
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return nil, err
 	}
 
@@ -238,17 +314,18 @@ func process(id int, s location) ([]byte, error) {
 
 	// Run scc against what we just cloned
 	fileName := processPath(s.String())
+	filePath := filepath.Join(tmpDir, fileName)
 
 	if fileName == "" {
 		return nil, errors.New("processPath returned empty")
 	}
 
-	cmdArgs = []string{
+	cmdArgs := []string{
 		"-f",
 		"json",
 		"-o",
-		"/tmp/" + fileName,
-		"/tmp/scc-tmp-path-" + strconv.Itoa(id),
+		filePath,
+		targetPath,
 	}
 
 	cmd = exec.Command("scc", cmdArgs...)
@@ -257,38 +334,28 @@ func process(id int, s location) ([]byte, error) {
 		return nil, err
 	}
 
-	file, err := os.ReadFile("/tmp/" + fileName)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
-	cache.Add(s.String(), file)
+
+	var res []processor.LanguageSummary
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return nil, err
+	}
+	_ = cache.Set(s.String(), res)
 
 	// Cleanup
-	cmdArgs = []string{
-		"-rf",
-		"/tmp/" + fileName,
-	}
-
-	cmd = exec.Command("rm", cmdArgs...)
-	err = cmd.Run()
-
-	if err != nil {
+	if err := os.RemoveAll(filePath); err != nil {
 		return nil, err
 	}
 
-	cmdArgs = []string{
-		"-rf",
-		"/tmp/scc-tmp-path-" + strconv.Itoa(id),
-	}
-
-	cmd = exec.Command("rm", cmdArgs...)
-	err = cmd.Run()
-
-	if err != nil {
+	if err := os.RemoveAll(targetPath); err != nil {
 		return nil, err
 	}
 
-	return file, nil
+	return res, nil
 }
 
 func processPath(s string) string {
@@ -299,7 +366,7 @@ func processPath(s string) string {
 		return ""
 	}
 
-	sp := []string{}
+	sp := make([]string, 0, len(split))
 
 	for _, s := range split {
 		sp = append(sp, cleanString(s))

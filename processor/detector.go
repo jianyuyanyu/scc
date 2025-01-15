@@ -1,11 +1,12 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package processor
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -32,7 +33,7 @@ func DetectLanguage(name string) ([]string, string) {
 	// Convert from d.ts to ts and check that in case of multiple extensions
 	if !ok {
 		extension = getExtension(extension)
-		language, _ = ExtensionToLanguage[extension]
+		language = ExtensionToLanguage[extension]
 	}
 
 	return language, extension
@@ -72,11 +73,9 @@ func DetectSheBang(content string) (string, error) {
 	}
 
 	for k, v := range ShebangLookup {
-		for _, x := range v {
+		if slices.Contains(v, cmd) {
 			// detects both full path and env usage
-			if x == cmd {
-				return k, nil
-			}
+			return k, nil
 		}
 	}
 
@@ -90,6 +89,7 @@ func scanForSheBang(content []byte) (string, error) {
 	candidate1 := ""
 	candidate2 := ""
 
+loop:
 	for i := range content {
 		switch state {
 		case 0: // Deals with whitespace after #! and before first /
@@ -107,7 +107,7 @@ func scanForSheBang(content []byte) (string, error) {
 				candidate1 = string(content[lastSlash+1 : i+1])
 			}
 
-			// between last slash and here is the first candidate which is either env or perl/php/python etc..
+			// between last slash and here is the first candidate which is either env or Perl/PHP/Python etc..
 			if isWhitespace(content[i]) {
 				// mark from lastSlash to here as first argument
 				candidate1 = string(content[lastSlash+1 : i])
@@ -129,7 +129,7 @@ func scanForSheBang(content []byte) (string, error) {
 				state = 4
 			}
 		case 4:
-			break
+			break loop
 		}
 	}
 
@@ -151,7 +151,7 @@ type languageGuess struct {
 // DetermineLanguage given a filename, fallback language, possible languages and content make a guess to the type.
 // If multiple possible it will guess based on keywords similar to how https://github.com/vmchale/polyglot does
 func DetermineLanguage(filename string, fallbackLanguage string, possibleLanguages []string, content []byte) string {
-	// If being called through an API its possible nothing is set here and as
+	// If being called through an API it's possible nothing is set here and as
 	// such should just return as the Language value should have already been set
 	if len(possibleLanguages) == 0 {
 		return fallbackLanguage
@@ -175,7 +175,7 @@ func DetermineLanguage(filename string, fallbackLanguage string, possibleLanguag
 
 	primary := ""
 
-	toSort := []languageGuess{}
+	toSort := make([]languageGuess, 0, len(possibleLanguages))
 	for _, lan := range possibleLanguages {
 		LanguageFeaturesMutex.Lock()
 		langFeatures := LanguageFeatures[lan]
@@ -192,7 +192,7 @@ func DetermineLanguage(filename string, fallbackLanguage string, possibleLanguag
 		// and as such the default fallback if we don't find a suitable number of matching
 		// keywords
 		// consider YAML files for example, where cloudformation files can also be YAML
-		// YAML can have any form so its not possible to say "this is a yaml file"
+		// YAML can have any form so it's not possible to say "this is a yaml file"
 		// so we can only say "this is likely to be a cloudformation file", and as such
 		// we need to handle a fallback case, which in this case is nothing
 		if len(langFeatures.Keywords) == 0 {
@@ -202,17 +202,16 @@ func DetermineLanguage(filename string, fallbackLanguage string, possibleLanguag
 		toSort = append(toSort, languageGuess{Name: lan, Count: count})
 	}
 
-	sort.Slice(toSort, func(i, j int) bool {
-		if toSort[i].Count == toSort[j].Count {
-			return strings.Compare(toSort[i].Name, toSort[j].Name) < 0
+	slices.SortFunc(toSort, func(a, b languageGuess) int {
+		if order := cmp.Compare(b.Count, a.Count); order != 0 {
+			return order
 		}
-
-		return toSort[i].Count > toSort[j].Count
+		return strings.Compare(a.Name, b.Name)
 	})
 
-	//fmt.Println(toSort)
-	//fmt.Println(possibleLanguages)
-	//fmt.Println(primary, toSort[0].Name, toSort[0].Count)
+	// fmt.Println(toSort)
+	// fmt.Println(possibleLanguages)
+	// fmt.Println(primary, toSort[0].Name, toSort[0].Count)
 
 	if primary != "" && len(toSort) != 0 {
 		// OK at this point we have a primary, which means we want 3 or more matches to count as something else

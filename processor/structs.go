@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: MIT OR Unlicense
+// SPDX-License-Identifier: MIT
 
 package processor
 
 import (
 	"bytes"
 	"hash"
+	"slices"
 	"sync"
 )
 
@@ -42,7 +43,9 @@ type Language struct {
 type LanguageFeature struct {
 	Complexity            *Trie
 	MultiLineComments     *Trie
+	MultiLine             [][]string // in case someone needs the actual value
 	SingleLineComments    *Trie
+	LineComment           []string // in case someone needs the actual value
 	Strings               *Trie
 	Tokens                *Trie
 	Nested                bool
@@ -78,14 +81,16 @@ type FileJob struct {
 	Complexity         int64
 	WeightedComplexity float64
 	Hash               hash.Hash
-	Callback           FileJobCallback
+	Callback           FileJobCallback `json:"-"`
 	Binary             bool
 	Minified           bool
 	Generated          bool
 	EndPoint           int
+	Uloc               int
+	LineLength         []int `json:"-"`
 }
 
-// LanguageSummary is used to hold summarised results for a single language
+// LanguageSummary is used to hold summarized results for a single language
 type LanguageSummary struct {
 	Name               string
 	Bytes              int64
@@ -98,6 +103,8 @@ type LanguageSummary struct {
 	Count              int64
 	WeightedComplexity float64
 	Files              []*FileJob
+	LineLength         []int
+	ULOC               int
 }
 
 // OpenClose is used to hold an open/close pair for matching such as multi line comments
@@ -126,15 +133,10 @@ func (c *CheckDuplicates) Add(key int64, hash []byte) {
 // Check is a non thread safe check to see if the key exists already need to use mutex inside struct before calling this
 func (c *CheckDuplicates) Check(key int64, hash []byte) bool {
 	hashes, ok := c.hashes[key]
-	if ok {
-		for _, h := range hashes {
-			if bytes.Equal(h, hash) {
-				return true
-			}
-		}
-	}
 
-	return false
+	return ok && slices.ContainsFunc(hashes, func(h []byte) bool {
+		return bytes.Equal(h, hash)
+	})
 }
 
 // Trie is a structure used to store matches efficiently
@@ -180,11 +182,20 @@ func (root *Trie) Match(token []byte) (int, int, []byte) {
 	var c byte
 
 	node = root
+	var prevClosedNode *Trie
+	var prevClosedDepth int
 	for depth, c = range token {
 		if node.Table[c] == nil {
-			return node.Type, depth, node.Close
+			break
 		}
 		node = node.Table[c]
+		if len(node.Close) > 0 {
+			prevClosedNode = node
+			prevClosedDepth = depth
+		}
+	}
+	if len(node.Close) == 0 && prevClosedNode != nil {
+		return prevClosedNode.Type, prevClosedDepth, prevClosedNode.Close
 	}
 	return node.Type, depth, node.Close
 }

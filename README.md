@@ -5,7 +5,7 @@ Sloc Cloc and Code (scc)
 
 A tool similar to cloc, sloccount and tokei. For counting the lines of code, blank lines, comment lines, and physical lines of source code in many programming languages.
 
-Goal is to be the fastest code counter possible, but also perform COCOMO calculation like sloccount and to estimate code complexity similar to cyclomatic complexity calculators. In short one tool to rule them all.
+Goal is to be the fastest code counter possible, but also perform COCOMO calculation like sloccount, estimate code complexity similar to cyclomatic complexity calculators and produce unique lines of code or DRYness metrics. In short one tool to rule them all.
 
 Also it has a very short name which is easy to type `scc`. 
 
@@ -17,19 +17,45 @@ If you don't like sloc cloc and code feel free to use the name `Succinct Code Co
 [![Scc Count Badge](https://sloc.xyz/github/boyter/scc/)](https://github.com/boyter/scc/)
 [![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://github.com/avelino/awesome-go)
 
-Dual-licensed under MIT or the [UNLICENSE](http://unlicense.org).
+Licensed under MIT licence.
+
+## Table of Contents
+
+- [Support](#support)
+- [Install](#install)
+- [Background](#background)
+- [Pitch](#pitch)
+- [Usage](#usage)
+- [Complexity Estimates](#complexity-estimates)
+- [Unique Lines of Code (ULOC)](#unique-lines-of-code-uloc)
+- [COCOMO](#cocomo)
+- [Output Formats](#output-formats)
+- [Performance](#performance)
+- [Development](#development)
+- [Adding/Modifying Languages](#addingmodifying-languages)
+- [Issues](#issues)
+- [Badges (beta)](#badges-beta)
+- [Language Support](LANGUAGES.md)
+
+### Support
+
+Using `scc` commercially? If you want priority support for `scc` you can purchase a years worth https://boyter.gumroad.com/l/kgenuv which entitles you to priority direct email support from the developer.
 
 ### Install
 
-#### Go Get
+#### Go Install
 
-If you are comfortable using Go and have >= 1.17 installed:
+You can install `scc` by using the standard go toolchain.
+
+To install the latest stable version of scc:
 
 `go install github.com/boyter/scc/v3@latest`
 
-or bleeding edge with
+To install a development version:
 
-`go install github.com/boyter/scc@master`
+`go install github.com/boyter/scc/v3@master`
+
+Note that `scc` needs go version >= 1.22.
 
 #### Snap
 
@@ -41,7 +67,7 @@ A [snap install](https://snapcraft.io/scc) exists thanks to [Ricardo](https://fe
 
 #### Homebrew
 
-Or if you have [homebrew](https://brew.sh/) installed
+Or if you have [Homebrew](https://brew.sh/) installed
 
 `$ brew install scc`
 
@@ -63,6 +89,12 @@ Or if you are using [Chocolatey](https://chocolatey.org/) on Windows
 
 `$ choco install scc`
 
+#### WinGet
+
+Or if you are using [WinGet](https://github.com/microsoft/winget-cli) on Windows
+
+`winget install --id benboyter.scc --source winget`
+
 #### FreeBSD
 
 On FreeBSD, scc is available as a package
@@ -73,32 +105,19 @@ Or, if you prefer to build from source, you can use the ports tree
 
 `$ cd /usr/ports/devel/scc && make install clean`
 
+### Run in Docker
+
+Go to the directory you want to run scc from.
+
+Run the command below to run the latest release of scc on your current working directory:
+
+```
+docker run --rm -it -v "$PWD:/pwd"  ghcr.io/lhoupert/scc:master scc /pwd
+```
+
 #### Manual
 
 Binaries for Windows, GNU/Linux and macOS for both i386 and x86_64 machines are available from the [releases](https://github.com/boyter/scc/releases) page.
-
-#### GitHub Action workflow
-
-https://github.com/marketplace/actions/scc-docker-action https://github.com/iRyanBell/scc-docker-action
-
-_.github/workflows/main.yml_
-
-```
-on: [push]
-
-jobs:
-  scc_job:
-    runs-on: ubuntu-latest
-    name: A job to count the lines of code.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-      - name: Get the lines of code.
-        id: scc
-        uses: iryanbell/scc-docker-action@v1.0.2
-        with:
-          args: ${{ env.workspace }} -i js,go,html,css
-```
 
 #### GitLab
 
@@ -138,9 +157,10 @@ Other similar projects,
  - [gocloc](https://github.com/hhatto/gocloc) a sloc counter in Go inspired by tokei
  - [loc](https://github.com/cgag/loc) rust implementation similar to tokei but often faster
  - [loccount](https://gitlab.com/esr/loccount) Go implementation written and maintained by ESR
- - [ployglot](https://github.com/vmchale/polyglot) ATS sloc counter
+ - [polyglot](https://github.com/vmchale/polyglot) ATS sloc counter
  - [tokei](https://github.com/XAMPPRocky/tokei) fast, accurate and written in rust
  - [sloc](https://github.com/flosse/sloc) coffeescript code counter
+ - [stto](https://github.com/mainak55512/stto) new Go code counter with a focus on performance
 
 Interesting reading about other code counting projects tokei, loc, polyglot and loccount
 
@@ -152,8 +172,8 @@ Interesting reading about other code counting projects tokei, loc, polyglot and 
 Further reading about processing files on the disk performance
 
  - https://blog.burntsushi.net/ripgrep/
- 
-Using `scc` to process 40 TB of files from Github/Bitbucket/Gitlab
+
+Using `scc` to process 40 TB of files from GitHub/Bitbucket/GitLab
 
  - https://boyter.org/posts/an-informal-survey-of-10-million-github-bitbucket-gitlab-projects/
 
@@ -172,6 +192,8 @@ Why use `scc`?
  - Can identify or ignore minified files
  - Able to identify many #! files ADVANCED! https://github.com/boyter/scc/issues/115
  - Can ignore large files by lines or bytes
+ - Can calculate the ULOC or unique lines of code by file, language or project
+ - Supports multiple output formats for integration, CSV, SQL, JSON, HTML and more
 
 Why not use `scc`?
 
@@ -218,63 +240,75 @@ Full details can be found in `scc --help` or `scc -h`. Note that the below refle
 features listed below may be missing from your installation.
 
 ```
-$ scc -h                                                                                      
 Sloc, Cloc and Code. Count lines of code in a directory with complexity estimation.
-Version 3.2.0
+Version 3.5.0 (beta)
 Ben Boyter <ben@boyter.org> + Contributors
 
 Usage:
   scc [flags] [files or directories]
 
 Flags:
-      --avg-wage int                 average wage value used for basic COCOMO calculation (default 56286)
-      --binary                       disable binary file detection
-      --by-file                      display output for every file
-      --ci                           enable CI output settings where stdout is ASCII
-      --cocomo-project-type string   change COCOMO model type [organic, semi-detached, embedded, "custom,1,1,1,1"] (default "organic")
-      --count-as string              count extension as language [e.g. jsp:htm,chead:"C Header" maps extension jsp to html and chead to C Header]
-      --currency-symbol string       set currency symbol (default "$")
-      --debug                        enable debug output
-      --eaf float                    the effort adjustment factor derived from the cost drivers (1.0 if rated nominal) (default 1)
-      --exclude-dir strings          directories to exclude (default [.git,.hg,.svn])
-  -x, --exclude-ext strings          ignore file extensions (overrides include-ext) [comma separated list: e.g. go,java,js]
-      --file-gc-count int            number of files to parse before turning the GC on (default 10000)
-  -f, --format string                set output format [tabular, wide, json, csv, csv-stream, cloc-yaml, html, html-table, sql, sql-insert, openmetrics] (default "tabular")
-      --format-multi string          have multiple format output overriding --format [e.g. tabular:stdout,csv:file.csv,json:file.json]
-      --gen                          identify generated files
-      --generated-markers strings    string markers in head of generated files (default [do not edit,<auto-generated />])
-  -h, --help                         help for scc
-  -i, --include-ext strings          limit to file extensions [comma separated list: e.g. go,java,js]
-      --include-symlinks             if set will count symlink files
-  -l, --languages                    print supported languages and extensions
-      --large-byte-count int         number of bytes a file can contain before being removed from output (default 1000000)
-      --large-line-count int         number of lines a file can contain before being removed from output (default 40000)
-      --min                          identify minified files
-  -z, --min-gen                      identify minified or generated files
-      --min-gen-line-length int      number of bytes per average line for file to be considered minified or generated (default 255)
-      --no-cocomo                    remove COCOMO calculation output
-  -c, --no-complexity                skip calculation of code complexity
-  -d, --no-duplicates                remove duplicate files from stats and output
-      --no-gen                       ignore generated files in output (implies --gen)
-      --no-gitignore                 disables .gitignore file logic
-      --no-ignore                    disables .ignore file logic
-      --no-large                     ignore files over certain byte and line size set by max-line-count and max-byte-count
-      --no-min                       ignore minified files in output (implies --min)
-      --no-min-gen                   ignore minified or generated files in output (implies --min-gen)
-      --no-size                      remove size calculation output
-  -M, --not-match stringArray        ignore files and directories matching regular expression
-  -o, --output string                output filename (default stdout)
-      --overhead float               set the overhead multiplier for corporate overhead (facilities, equipment, accounting, etc.) (default 2.4)
-      --remap-all string             inspect every file and remap by checking for a string and remapping the language [e.g. "-*- C++ -*-":"C Header"]
-      --remap-unknown string         inspect files of unknown type and remap by checking for a string and remapping the language [e.g. "-*- C++ -*-":"C Header"]
-      --size-unit string             set size unit [si, binary, mixed, xkcd-kb, xkcd-kelly, xkcd-imaginary, xkcd-intel, xkcd-drive, xkcd-bakers] (default "si")
-      --sloccount-format             print a more SLOCCount like COCOMO calculation
-  -s, --sort string                  column to sort by [files, name, lines, blanks, code, comments, complexity] (default "files")
-      --sql-project string           use supplied name as the project identifier for the current run. Only valid with the --format sql or sql-insert option
-  -t, --trace                        enable trace output (not recommended when processing multiple files)
-  -v, --verbose                      verbose output
-      --version                      version for scc
-  -w, --wide                         wider output with additional statistics (implies --complexity)
+      --avg-wage int                       average wage value used for basic COCOMO calculation (default 56286)
+      --binary                             disable binary file detection
+      --by-file                            display output for every file
+  -m, --character                          calculate max and mean characters per line
+      --ci                                 enable CI output settings where stdout is ASCII
+      --cocomo-project-type string         change COCOMO model type [organic, semi-detached, embedded, "custom,1,1,1,1"] (default "organic")
+      --count-as string                    count extension as language [e.g. jsp:htm,chead:"C Header" maps extension jsp to html and chead to C Header]
+      --count-ignore                       set to allow .gitignore and .ignore files to be counted
+      --currency-symbol string             set currency symbol (default "$")
+      --debug                              enable debug output
+      --directory-walker-job-workers int   controls the maximum number of workers which will walk the directory tree (default 8)
+  -a, --dryness                            calculate the DRYness of the project (implies --uloc)
+      --eaf float                          the effort adjustment factor derived from the cost drivers (1.0 if rated nominal) (default 1)
+      --exclude-dir strings                directories to exclude (default [.git,.hg,.svn])
+  -x, --exclude-ext strings                ignore file extensions (overrides include-ext) [comma separated list: e.g. go,java,js]
+  -n, --exclude-file strings               ignore files with matching names (default [package-lock.json,Cargo.lock,yarn.lock,pubspec.lock,Podfile.lock,pnpm-lock.yaml])
+      --file-gc-count int                  number of files to parse before turning the GC on (default 10000)
+      --file-list-queue-size int           the size of the queue of files found and ready to be read into memory (default 8)
+      --file-process-job-workers int       number of goroutine workers that process files collecting stats (default 8)
+      --file-summary-job-queue-size int    the size of the queue used to hold processed file statistics before formatting (default 8)
+  -f, --format string                      set output format [tabular, wide, json, json2, csv, csv-stream, cloc-yaml, html, html-table, sql, sql-insert, openmetrics] (default "tabular")
+      --format-multi string                have multiple format output overriding --format [e.g. tabular:stdout,csv:file.csv,json:file.json]
+      --gen                                identify generated files
+      --generated-markers strings          string markers in head of generated files (default [do not edit,<auto-generated />])
+  -h, --help                               help for scc
+  -i, --include-ext strings                limit to file extensions [comma separated list: e.g. go,java,js]
+      --include-symlinks                   if set will count symlink files
+  -l, --languages                          print supported languages and extensions
+      --large-byte-count int               number of bytes a file can contain before being removed from output (default 1000000)
+      --large-line-count int               number of lines a file can contain before being removed from output (default 40000)
+      --min                                identify minified files
+  -z, --min-gen                            identify minified or generated files
+      --min-gen-line-length int            number of bytes per average line for file to be considered minified or generated (default 255)
+      --no-cocomo                          remove COCOMO calculation output
+  -c, --no-complexity                      skip calculation of code complexity
+  -d, --no-duplicates                      remove duplicate files from stats and output
+      --no-gen                             ignore generated files in output (implies --gen)
+      --no-gitignore                       disables .gitignore file logic
+      --no-gitmodule                       disables .gitmodules file logic
+      --no-hborder                         remove horizontal borders between sections
+      --no-ignore                          disables .ignore file logic
+      --no-large                           ignore files over certain byte and line size set by large-line-count and large-byte-count
+      --no-min                             ignore minified files in output (implies --min)
+      --no-min-gen                         ignore minified or generated files in output (implies --min-gen)
+      --no-scc-ignore                      disables .sccignore file logic
+      --no-size                            remove size calculation output
+  -M, --not-match stringArray              ignore files and directories matching regular expression
+  -o, --output string                      output filename (default stdout)
+      --overhead float                     set the overhead multiplier for corporate overhead (facilities, equipment, accounting, etc.) (default 2.4)
+  -p, --percent                            include percentage values in output
+      --remap-all string                   inspect every file and remap by checking for a string and remapping the language [e.g. "-*- C++ -*-":"C Header"]
+      --remap-unknown string               inspect files of unknown type and remap by checking for a string and remapping the language [e.g. "-*- C++ -*-":"C Header"]
+      --size-unit string                   set size unit [si, binary, mixed, xkcd-kb, xkcd-kelly, xkcd-imaginary, xkcd-intel, xkcd-drive, xkcd-bakers] (default "si")
+      --sloccount-format                   print a more SLOCCount like COCOMO calculation
+  -s, --sort string                        column to sort by [files, name, lines, blanks, code, comments, complexity] (default "files")
+      --sql-project string                 use supplied name as the project identifier for the current run. Only valid with the --format sql or sql-insert option
+  -t, --trace                              enable trace output (not recommended when processing multiple files)
+  -u, --uloc                               calculate the number of unique lines of code (ULOC) for the project
+  -v, --verbose                            verbose output
+      --version                            version for scc
+  -w, --wide                               wider output with additional statistics (implies --complexity)
 ```
 
 Output should look something like the below for the redis project
@@ -324,9 +358,19 @@ Note that you don't have to specify the directory you want to run against. Runni
 
 You can also run against multiple files or directories `scc directory1 directory2 file1 file2` with the results aggregated in the output.
 
+Since `scc` writes to standard output, there are many ways to easily share the results. For example, using [netcat](https://manpages.org/nc)
+and [one of many pastebins](https://paste.c-net.org/) gives a public URL:
+
+```
+$ scc | nc paste.c-net.org 9999
+https://paste.c-net.org/Example
+```
+
 ### Ignore Files
 
 `scc` mostly supports .ignore files inside directories that it scans. This is similar to how ripgrep, ag and tokei work. .ignore files are 100% the same as .gitignore files with the same syntax, and as such `scc` will ignore files and directories listed in them. You can add .ignore files to ignore things like vendored dependency checked in files and such. The idea is allowing you to add a file or folder to git and have ignored in the count.
+
+It also supports its own ignore file `.sccignore` if you want `scc` to ignore things while having ripgrep, ag, tokei and others support them.
 
 ### Interesting Use Cases
 
@@ -338,6 +382,9 @@ It also is used to count code and guess language types in https://searchcode.com
 You can also hook scc into your gitlab pipeline https://gitlab.com/guided-explorations/ci-cd-plugin-extensions/ci-cd-plugin-extension-scc
 
 Also used by CodeQL https://github.com/boyter/scc/pull/317 and Scaleway https://twitter.com/Scaleway/status/1488087029476995074?s=20&t=N2-z6O-ISDdDzULg4o4uVQ
+
+- https://docs.linuxfoundation.org/lfx/insights/v3-beta-version-current/getting-started/landing-page/cocomo-cost-estimation-simplified
+- https://openems.io/
 
 ### Features
 
@@ -355,7 +402,7 @@ It also attempts to count the complexity of code. This is done by checking for b
 
 ### Complexity Estimates
 
-Lets take a minute to discuss the complexity estimate itself.
+Let's take a minute to discuss the complexity estimate itself.
 
 The complexity estimate is really just a number that is only comparable to files in the same language. It should not be used to compare languages directly without weighting them. The reason for this is that its calculated by looking for branch and loop statements in the code and incrementing a counter for that file.
 
@@ -371,9 +418,52 @@ The reason it's an approximation is that it's calculated almost for free from a 
 
 In short when scc is looking through what it has identified as code if it notices what are usually branch conditions it will increment a counter.
 
-The conditions it looks for are compiled into the code and you can get an idea for them by looking at the JSON inside the repository. See https://github.com/boyter/scc/blob/master/languages.json#L3524 for an example of what it's looking at for a file that's Java.
+The conditions it looks for are compiled into the code and you can get an idea for them by looking at the JSON inside the repository. See https://github.com/boyter/scc/blob/master/languages.json#L3869 for an example of what it's looking at for a file that's Java.
 
 The increment happens for each of the matching conditions and produces the number you see.
+
+### Unique Lines of Code (ULOC)
+
+ULOC stands for Unique Lines of Code and represents the unique lines across languages, files and the project itself. This idea was taken from
+https://cmcenroe.me/2018/12/14/uloc.html where the calculation is presented using standard Unix tools `sort -u *.h *.c | wc -l`. This metric is
+there to assist with the estimation of complexity within the project. Quoting the source
+
+> In my opinion, the number this produces should be a better estimate of the complexity of a project. Compared to SLOC, not only are blank lines discounted, but so are close-brace lines and other repetitive code such as common includes. On the other hand, ULOC counts comments, which require just as much maintenance as the code around them does, while avoiding inflating the result with license headers which appear in every file, for example.
+
+You can obtain the ULOC by supplying the `-u` or `--uloc` argument to `scc`.
+
+It has a corresponding metric `DRYness %` which is the percentage of ULOC to CLOC or `DRYness = ULOC / SLOC`. The 
+higher the number the more DRY (don't repeat yourself) the project can be considered. In general a higher value
+here is a better as it indicates less duplicated code. The DRYness metric was taken from a comment by minimax https://lobste.rs/s/has9r7/uloc_unique_lines_code 
+
+To obtain the DRYness metric you can use the `-a` or `--dryness` argument to `scc`, which will implicitly set `--uloc`.
+
+Note that there is a performance penalty when calculating the ULOC metrics which can double the runtime.
+
+Running the uloc and DRYness calculations against C code a clone of redis produces an output as follows.
+
+```
+$ scc -a -i c redis 
+───────────────────────────────────────────────────────────────────────────────
+Language                 Files     Lines   Blanks  Comments     Code Complexity
+───────────────────────────────────────────────────────────────────────────────
+C                          419    241293    27309     41292   172692      40849
+(ULOC)                            133535
+───────────────────────────────────────────────────────────────────────────────
+Total                      419    241293    27309     41292   172692      40849
+───────────────────────────────────────────────────────────────────────────────
+Unique Lines of Code (ULOC)       133535
+DRYness %                           0.55
+───────────────────────────────────────────────────────────────────────────────
+Estimated Cost to Develop (organic) $6,035,748
+Estimated Schedule Effort (organic) 27.23 months
+Estimated People Required (organic) 19.69
+───────────────────────────────────────────────────────────────────────────────
+Processed 8407821 bytes, 8.408 megabytes (SI)
+───────────────────────────────────────────────────────────────────────────────
+```
+
+Further reading about the ULOC calculation can be found at https://boyter.org/posts/sloc-cloc-code-new-metic-uloc/
 
 ### COCOMO
 
@@ -486,7 +576,7 @@ Note that in all cases if the remap rule does not apply normal #! rules will app
 
 ### Output Formats
 
-By default `scc` will output to the console. However you can produce output in other formats if you require.
+By default `scc` will output to the console. However, you can produce output in other formats if you require.
 
 The different options are `tabular, wide, json, csv, csv-stream, cloc-yaml, html, html-table, sql, sql-insert, openmetrics`. 
 
@@ -495,14 +585,14 @@ write your output to. For example `scc -f html -o output.html` will run `scc` ag
 the results in html to the file `output.html`.
 
 You can also write to multiple output files, or multiple types to stdout if you want using the `--format-multi` option. This is 
-most useful when working in CI/CD systems where you want HTML reports as an artefact while also displaying the counts in stdout. 
+most useful when working in CI/CD systems where you want HTML reports as an artifact while also displaying the counts in stdout. 
 
 ```
 scc --format-multi "tabular:stdout,html:output.html,csv:output.csv"
 ```
 
-The above will run against the current directory, outputting to standard output the the default output, as well as writing
-to output.html and output.csv with the appropiate formats.
+The above will run against the current directory, outputting to standard output the default output, as well as writing
+to output.html and output.csv with the appropriate formats.
 
 #### Tabular 
 
@@ -613,9 +703,9 @@ to account for scc including complexity counts and bytes.
 
 The difference between `sql` and `sql-insert` is that `sql` will include table creation while the latter will only have the insert commands.
 
-Usage is 100% the same as any other `scc` command but sql output will always contain per file details. You can compute totals yourself using SQL.
+Usage is 100% the same as any other `scc` command but sql output will always contain per file details. You can compute totals yourself using SQL, however COCOMO calculations will appear against the metadata table as the columns `estimated_cost` `estimated_schedule_months` and `estimated_people`.
 
-The below will run scc against the current directory, name the ouput as the project scc and then pipe the output to sqlite to put into the database code.db
+The below will run scc against the current directory, name the output as the project scc and then pipe the output to sqlite to put into the database code.db
 
 ```
 scc --format sql --sql-project scc . | sqlite3 code.db
@@ -690,120 +780,132 @@ scc_bytes{language="Go",file="./bbbb.go"} 1000
 
 Generally `scc` will the fastest code counter compared to any I am aware of and have compared against. The below comparisons are taken from the fastest alternative counters. See `Other similar projects` above to see all of the other code counters compared against. It is designed to scale to as many CPU's cores as you can provide.
 
-However if you want greater performance and you have RAM to spare you can disable the garbage collector like the following on linux `GOGC=-1 scc .` which should speed things up considerably. For some repositories turning off the code complexity calculation via `-c` can reduce runtime as well.
+However, if you want greater performance and you have RAM to spare you can disable the garbage collector like the following on Linux `GOGC=-1 scc .` which should speed things up considerably. For some repositories turning off the code complexity calculation via `-c` can reduce runtime as well.
 
-Benchmarks are run on fresh 32 Core CPU Optimised Digital Ocean Virtual Machine 2022/09/20 all done using [hyperfine](https://github.com/sharkdp/hyperfine) with 3 warm-up runs and 10 timed runs.
-
-```
-scc v3.1.0
-tokei v12.1.2
-loc v0.5.0
-polyglot v0.5.29
-```
+Benchmarks are run on fresh 48 Core CPU Optimised Digital Ocean Virtual Machine 2024/09/30 all done using [hyperfine](https://github.com/sharkdp/hyperfine).
 
 See https://github.com/boyter/scc/blob/master/benchmark.sh to see how the benchmarks are run.
 
 
-#### Redis https://github.com/antirez/redis/
+#### Valkey https://github.com/valkey-io/valkey
 
 ```shell
-Benchmark 1: scc redis
-  Time (mean ± σ):      20.2 ms ±   1.7 ms    [User: 127.1 ms, System: 47.0 ms]
-  Range (min … max):    16.8 ms …  25.8 ms    132 runs
+Benchmark 1: scc valkey
+  Time (mean ± σ):      28.0 ms ±   1.6 ms    [User: 166.1 ms, System: 55.0 ms]
+  Range (min … max):    24.7 ms …  31.5 ms    114 runs
  
-Benchmark 2: scc -c redis
-  Time (mean ± σ):      17.0 ms ±   1.4 ms    [User: 91.6 ms, System: 32.7 ms]
-  Range (min … max):    14.3 ms …  21.6 ms    169 runs
+Benchmark 2: scc -c valkey
+  Time (mean ± σ):      25.8 ms ±   1.7 ms    [User: 123.7 ms, System: 53.2 ms]
+  Range (min … max):    23.3 ms …  29.3 ms    114 runs
  
-Benchmark 3: tokei redis
-  Time (mean ± σ):      33.7 ms ±   5.0 ms    [User: 246.4 ms, System: 55.0 ms]
-  Range (min … max):    24.2 ms …  47.5 ms    76 runs
+Benchmark 3: tokei valkey
+  Time (mean ± σ):      63.0 ms ±   3.8 ms    [User: 433.8 ms, System: 244.3 ms]
+  Range (min … max):    46.7 ms …  67.6 ms    44 runs
  
-Benchmark 4: loc redis
-  Time (mean ± σ):      36.9 ms ±  30.6 ms    [User: 756.5 ms, System: 20.7 ms]
-  Range (min … max):     9.9 ms … 123.9 ms    71 runs
- 
-Benchmark 5: polyglot redis
-  Time (mean ± σ):      21.8 ms ±   0.9 ms    [User: 32.1 ms, System: 46.3 ms]
-  Range (min … max):    20.0 ms …  28.4 ms    138 runs
+Benchmark 4: polyglot valkey
+  Time (mean ± σ):      27.4 ms ±   0.8 ms    [User: 46.5 ms, System: 79.0 ms]
+  Range (min … max):    25.7 ms …  29.5 ms    108 runs
  
 Summary
-  'scc -c redis' ran
-    1.19 ± 0.14 times faster than 'scc redis'
-    1.28 ± 0.12 times faster than 'polyglot redis'
-    1.98 ± 0.33 times faster than 'tokei redis'
-    2.17 ± 1.81 times faster than 'loc redis'
+  scc -c valkey ran
+    1.06 ± 0.08 times faster than polyglot valkey
+    1.08 ± 0.09 times faster than scc valkey
+    2.44 ± 0.22 times faster than tokei valkey
 ```
 
 #### CPython https://github.com/python/cpython
 
 ```shell
 Benchmark 1: scc cpython
-  Time (mean ± σ):      52.6 ms ±   3.8 ms    [User: 624.3 ms, System: 121.5 ms]
-  Range (min … max):    45.3 ms …  62.3 ms    47 runs
+  Time (mean ± σ):      81.9 ms ±   4.2 ms    [User: 789.6 ms, System: 164.6 ms]
+  Range (min … max):    74.0 ms …  89.6 ms    36 runs
  
 Benchmark 2: scc -c cpython
-  Time (mean ± σ):      46.0 ms ±   3.8 ms    [User: 468.0 ms, System: 111.2 ms]
-  Range (min … max):    40.0 ms …  58.0 ms    67 runs
+  Time (mean ± σ):      75.4 ms ±   4.6 ms    [User: 621.9 ms, System: 152.6 ms]
+  Range (min … max):    68.4 ms …  84.5 ms    37 runs
  
 Benchmark 3: tokei cpython
-  Time (mean ± σ):     110.4 ms ±   6.6 ms    [User: 1239.8 ms, System: 114.5 ms]
-  Range (min … max):    98.3 ms … 123.6 ms    26 runs
+  Time (mean ± σ):     162.1 ms ±   3.4 ms    [User: 1824.0 ms, System: 420.4 ms]
+  Range (min … max):   156.7 ms … 168.9 ms    18 runs
  
-Benchmark 4: loc cpython
-  Time (mean ± σ):      52.9 ms ±  25.2 ms    [User: 1103.0 ms, System: 57.4 ms]
-  Range (min … max):    30.0 ms … 118.9 ms    49 runs
- 
-Benchmark 5: polyglot cpython
-  Time (mean ± σ):      82.4 ms ±   3.0 ms    [User: 153.3 ms, System: 168.8 ms]
-  Range (min … max):    74.8 ms …  88.7 ms    36 runs
+Benchmark 4: polyglot cpython
+  Time (mean ± σ):      94.2 ms ±   3.0 ms    [User: 210.3 ms, System: 260.3 ms]
+  Range (min … max):    88.3 ms …  99.4 ms    30 runs
  
 Summary
-  'scc -c cpython' ran
-    1.14 ± 0.13 times faster than 'scc cpython'
-    1.15 ± 0.56 times faster than 'loc cpython'
-    1.79 ± 0.16 times faster than 'polyglot cpython'
-    2.40 ± 0.24 times faster than 'tokei cpython'
+  scc -c cpython ran
+    1.09 ± 0.09 times faster than scc cpython
+    1.25 ± 0.09 times faster than polyglot cpython
+    2.15 ± 0.14 times faster than tokei cpython
 ```
 
 #### Linux Kernel https://github.com/torvalds/linux
 
 ```shell
 Benchmark 1: scc linux
-  Time (mean ± σ):     743.0 ms ±  18.8 ms    [User: 17133.4 ms, System: 1280.2 ms]
-  Range (min … max):   709.4 ms … 778.8 ms    10 runs
+  Time (mean ± σ):      1.070 s ±  0.036 s    [User: 15.253 s, System: 1.962 s]
+  Range (min … max):    1.011 s …  1.133 s    10 runs
  
 Benchmark 2: scc -c linux
-  Time (mean ± σ):     528.8 ms ±  11.8 ms    [User: 10272.0 ms, System: 1236.9 ms]
-  Range (min … max):   508.9 ms … 543.1 ms    10 runs
+  Time (mean ± σ):      1.007 s ±  0.039 s    [User: 9.822 s, System: 1.937 s]
+  Range (min … max):    0.915 s …  1.043 s    10 runs
  
 Benchmark 3: tokei linux
-  Time (mean ± σ):     736.5 ms ±  18.2 ms    [User: 13098.3 ms, System: 2276.0 ms]
-  Range (min … max):   699.3 ms … 760.8 ms    10 runs
+  Time (mean ± σ):      1.094 s ±  0.019 s    [User: 19.416 s, System: 11.085 s]
+  Range (min … max):    1.067 s …  1.135 s    10 runs
  
-Benchmark 4: loc linux
-  Time (mean ± σ):     567.1 ms ± 113.4 ms    [User: 15984.5 ms, System: 1037.0 ms]
-  Range (min … max):   381.8 ms … 656.3 ms    10 runs
- 
-Benchmark 5: polyglot linux
-  Time (mean ± σ):      1.241 s ±  0.027 s    [User: 2.973 s, System: 2.636 s]
-  Range (min … max):    1.196 s …  1.299 s    10 runs
+Benchmark 4: polyglot linux
+  Time (mean ± σ):      1.387 s ±  0.028 s    [User: 3.775 s, System: 3.212 s]
+  Range (min … max):    1.359 s …  1.433 s    10 runs
  
 Summary
-  'scc -c linux' ran
-    1.07 ± 0.22 times faster than 'loc linux'
-    1.39 ± 0.05 times faster than 'tokei linux'
-    1.41 ± 0.05 times faster than 'scc linux'
-    2.35 ± 0.07 times faster than 'polyglot linux'
+  scc -c linux ran
+    1.06 ± 0.05 times faster than scc linux
+    1.09 ± 0.05 times faster than tokei linux
+    1.38 ± 0.06 times faster than polyglot linux
+```
+
+#### Sourcegraph https://github.com/SINTEF/sourcegraph.git
+
+Sourcegraph has gone dark since I last ran these benchmarks hence using a clone taken before this occured.
+The reason for this is to track what appears to be a performance regression in tokei.
+
+
+```shell
+Benchmark 1: scc sourcegraph
+  Time (mean ± σ):     125.1 ms ±   8.0 ms    [User: 638.1 ms, System: 218.0 ms]
+  Range (min … max):   116.7 ms … 141.3 ms    24 runs
+ 
+Benchmark 2: scc -c sourcegraph
+  Time (mean ± σ):     119.8 ms ±   8.3 ms    [User: 554.8 ms, System: 208.6 ms]
+  Range (min … max):   111.9 ms … 138.4 ms    22 runs
+ 
+Benchmark 3: tokei sourcegraph
+  Time (mean ± σ):     23.888 s ±  1.416 s    [User: 73.858 s, System: 630.906 s]
+  Range (min … max):   22.292 s … 27.010 s    10 runs
+ 
+Benchmark 4: polyglot sourcegraph
+  Time (mean ± σ):     113.3 ms ±   4.1 ms    [User: 237.7 ms, System: 791.8 ms]
+  Range (min … max):   107.9 ms … 124.3 ms    26 runs
+ 
+Summary
+  polyglot sourcegraph ran
+    1.06 ± 0.08 times faster than scc -c sourcegraph
+    1.10 ± 0.08 times faster than scc sourcegraph
+  210.86 ± 14.66 times faster than tokei sourcegraph
+
 ```
 
 If you enable duplicate detection expect performance to fall by about 20% in `scc`.
 
-Performance is tracked over each release and presented below. Currently, the most recent release 3.1.0 is the fastest version.
+Performance is tracked for some releases and presented below.
 
 <img alt="scc" src=https://github.com/boyter/scc/raw/master/performance-over-time.png>
 
-https://jsfiddle.net/m1w7kgqv/
+The decrease in performance from the 3.3.0 release was due to accurate .gitignore, .ignore and .gitmodule support.
+Current work is focussed on resolving this.
+
+https://jsfiddle.net/mw21h9va/
 
 ### CI/CD Support
 
@@ -832,7 +934,7 @@ The `--format-multi` option is especially useful in CI/CD where you want to get 
 
 If you want to hack away feel free! PR's are accepted. Some things to keep in mind. If you want to change a language definition you need to update `languages.json` and then run `go generate` which will convert it into the `processor/constants.go` file.
 
-For all other changes ensure you run all tests before submitting. You can do so using `go test ./...`. However for maximum coverage please run `test-all.sh` which will run `gofmt`, unit tests, race detector and then all of the integration tests. All of those must pass to ensure a stable release.
+For all other changes ensure you run all tests before submitting. You can do so using `go test ./...`. However, for maximum coverage please run `test-all.sh` which will run `gofmt`, unit tests, race detector and then all of the integration tests. All of those must pass to ensure a stable release.
 
 ### API Support
 
@@ -920,7 +1022,7 @@ Packaging as of version v3.1.0 is done through https://goreleaser.com/
 
 Note if you plan to run `scc` in Alpine containers you will need to build with CGO_ENABLED=0.
 
-See the below dockerfile as an example on how to achieve this based on this issue https://github.com/boyter/scc/issues/208
+See the below Dockerfile as an example on how to achieve this based on this issue https://github.com/boyter/scc/issues/208
 
 ```
 FROM golang as scc-get
@@ -962,7 +1064,6 @@ Valid values include `code, blanks, lines, comments, cocomo` and examples of the
 [![Scc Count Badge](https://sloc.xyz/github/boyter/scc/?category=comments)](https://github.com/boyter/scc/)
 [![Scc Count Badge](https://sloc.xyz/github/boyter/scc/?category=cocomo)](https://github.com/boyter/scc/)
 
-
 For `cocomo` you can also set the `avg-wage` value similar to `scc` itself. For example,
 
 https://sloc.xyz/github/boyter/scc/?category=cocomo&avg-wage=1
@@ -970,19 +1071,44 @@ https://sloc.xyz/github/boyter/scc/?category=cocomo&avg-wage=100000
 
 Note that the avg-wage value must be a positive integer otherwise it will revert back to the default value of 56286.
 
+You can also configure the look and feel of the bad using the following parameters,
+
+ - ?lower=true will lower the title text, so "Total lines" would be "total lines"
+
+The below can control the colours of shadows, fonts and badges
+
+ - ?font-color=fff
+ - ?font-shadow-color=010101
+ - ?top-shadow-accent-color=bbb
+ - ?title-bg-color=555
+ - ?badge-bg-color=4c1
+
+An example of using some of these parameters to produce an admittedly ugly result
+
+[![Scc Count Badge](https://sloc.xyz/github/boyter/scc?font-color=ff0000&badge-bg-color=0000ff&lower=true)](https://github.com/boyter/scc/)
+
 *NB* it may not work for VERY large repositories (has been tested on Apache hadoop/spark without issue).
 
 You can find the source code for badges in the repository at https://github.com/boyter/scc/blob/master/cmd/badges/main.go 
 
 #### A example for each supported provider
 
-- github - https://sloc.xyz/github/boyter/scc/
+- Github - https://sloc.xyz/github/boyter/scc/
 - sr.ht - https://sloc.xyz/sr.ht/~nektro/magnolia-desktop/
-- bitbucket - https://sloc.xyz/bitbucket/boyter/decodingcaptchas
-- gitlab - https://sloc.xyz/gitlab/esr/loccount
+- Bitbucket - https://sloc.xyz/bitbucket/boyter/decodingcaptchas
+- Gitlab - https://sloc.xyz/gitlab/esr/loccount
 
 ### Languages
 
-List of supported languages. The master version of `scc` supports 239 languages at last count. Note that this is always assumed that you built from master, and it might trail behind what is actually supported. To see what your version of `scc` supports run `scc --languages`
+List of supported languages. The master version of `scc` supports 322 languages at last count. Note that this is always assumed that you built from master, and it might trail behind what is actually supported. To see what your version of `scc` supports run `scc --languages`
 
 [Click here to view all languages supported by master](LANGUAGES.md)
+
+
+### Release Checklist
+
+- Update version
+- Push code with release number
+- Tag off
+- Release via goreleaser
+- Update dockerfile
